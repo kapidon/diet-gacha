@@ -1,7 +1,7 @@
 # diet-gacha 設計書
 
 作成日: 2026-08-21
-状態: **作成中**（「11. 未確定事項」を参照）
+状態: **作成中**（「12. 未確定事項」を参照）
 
 ---
 
@@ -49,7 +49,7 @@ TypeScript と Next.js を習得するための個人プロジェクトとして
 
 - ユーザー登録・ログイン
 - 習慣の登録・編集・削除（実行曜日の指定を含む）
-- 日々の達成チェック
+- 日々の達成チェック（誤チェックの取り消しを含む）
 - チケット付与（1達成1枚、1日3枚上限）
 - ガチャ（全ランダム、サーバー側抽選）
 - 図鑑（カード40枚）
@@ -91,6 +91,7 @@ TypeScript と Next.js を習得するための個人プロジェクトとして
 ### バージョン確認の記録（2026-08-21 時点）
 
 - `next` latest: 16.3.1（Node.js `>=20.9.0`）
+- Prisma 7.9.1 の Node.js 要件: `^20.19 || ^22.12 || >=24.0`（Next.js より厳しい）
 - `@prisma/client` latest: 7.9.1
 - `better-auth` latest: 1.7.1
 - `drizzle-orm` latest: 0.45.2 / rc: 1.0.0-rc.4
@@ -243,63 +244,91 @@ Next.js 公式はディレクトリ構成について意見を持たず、3つ�
 
 ### スキーマ
 
+Prisma 7.9.1 で `prisma validate` を通した状態のもの。
+
 ```prisma
-// Better Auth が user / session / account / verification を生成する。
-// user への項目追加は Better Auth の拡張機構を使う。
-//   追加するもの: shareId（公開ページ用の識別子）
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+// user / session / account / verification は `npx @better-auth/cli generate` が
+// この schema.prisma に生成する。生成されたモデル自体は手で編集しない
+// （再生成で失われるため）。下記モデルからのリレーションのみ追記する。
+
+model ShareLink {
+  userId    String   @id
+  shareId   String   @unique                      // 推測不能なランダム文字列
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
 
 model Habit {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   userId     String
   name       String
-  daysOfWeek Int[]              // 0=月 ... 6=日。実行する曜日
-  archivedAt DateTime?          // 論理削除
-  createdAt  DateTime @default(now())
+  daysOfWeek Weekday[]
+  archivedAt DateTime? @db.Timestamptz(3)         // 論理削除
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
 
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   logs       HabitLog[]
   discovered UserCard[]
 
+  @@unique([id, userId])
   @@index([userId])
 }
 
 model HabitLog {
-  id      String   @id @default(cuid())
-  userId  String
-  habitId String
-  date    DateTime @db.Date      // JST 基準の日付
-  habit   Habit    @relation(fields: [habitId], references: [id])
-  ticket  Ticket?
+  id        String   @id @default(cuid())
+  userId    String
+  habitId   String
+  date      DateTime @db.Date                     // JST 基準
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  habit  Habit   @relation(fields: [habitId, userId], references: [id, userId], onDelete: Restrict)
+  ticket Ticket?
 
   @@unique([habitId, date])
+  @@unique([id, userId, date])
   @@index([userId, date])
 }
 
 model Ticket {
   id         String    @id @default(cuid())
   userId     String
-  habitLogId String    @unique   // 1達成につき最大1枚
-  earnedAt   DateTime  @default(now())
-  earnedDate DateTime  @db.Date  // 1日3枚判定用
-  consumedAt DateTime?
+  habitLogId String    @unique
+  earnedDate DateTime  @db.Date
+  dailySeq   Int                                  // 1〜3。その日の3枠のどれを占有しているか
+  earnedAt   DateTime  @default(now()) @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
 
-  habitLog HabitLog     @relation(fields: [habitLogId], references: [id])
+  habitLog HabitLog     @relation(fields: [habitLogId, userId, earnedDate], references: [id, userId, date], onDelete: Restrict)
   result   GachaResult?
 
+  @@unique([habitLogId, userId, earnedDate])
+  @@unique([userId, earnedDate, dailySeq])
+  @@unique([id, userId])
   @@index([userId, consumedAt])
-  @@index([userId, earnedDate])
 }
 
 model Card {
-  id              String  @id
-  number          Int     @unique      // 図鑑番号 1〜40
+  id              Int     @id                     // 図鑑番号。シードで明示指定する
   name            String
   flavorText      String
-  rarity          Int                  // 1〜4
+  rarity          Int
   emoji           String
-  imagePath       String?              // 第2弾
-  knowledge       String?              // 第2弾（裏面）
-  sourceUrl       String?              // 第2弾（出典）
-  discoveredCount Int     @default(0)  // 発見順位の採番用
+  imagePath       String?                         // 第2弾
+  knowledge       String?                         // 第2弾（裏面）
+  sourceUrl       String?                         // 第2弾（出典）
+  discoveredCount Int     @default(0)             // 発見順位の採番用
 
   results GachaResult[]
   owners  UserCard[]
@@ -308,35 +337,52 @@ model Card {
 model GachaResult {
   id           String   @id @default(cuid())
   userId       String
-  cardId       String
+  cardId       Int
   ticketId     String   @unique
-  drawnAt      DateTime @default(now())
+  drawnAt      DateTime @default(now()) @db.Timestamptz(3)
   streakAtDraw Int
 
-  card    Card      @relation(fields: [cardId], references: [id])
-  ticket  Ticket    @relation(fields: [ticketId], references: [id])
+  card    Card      @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  ticket  Ticket    @relation(fields: [ticketId, userId], references: [id, userId], onDelete: Restrict)
   firstOf UserCard?
 
+  @@unique([ticketId, userId])
+  @@unique([id, userId, cardId])
   @@index([userId, drawnAt])
 }
 
 model UserCard {
-  id             String  @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
-  cardId         String
-  firstResultId  String  @unique
-  viaHabitId     String?
+  cardId         Int
+  firstResultId  String   @unique
+  viaHabitId     String
   discoveryRank  Int
   personalReward String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
 
-  card        Card        @relation(fields: [cardId], references: [id])
-  firstResult GachaResult @relation(fields: [firstResultId], references: [id])
-  viaHabit    Habit?      @relation(fields: [viaHabitId], references: [id])
+  card        Card        @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  firstResult GachaResult @relation(fields: [firstResultId, userId, cardId], references: [id, userId, cardId], onDelete: Restrict)
+  viaHabit    Habit       @relation(fields: [viaHabitId, userId], references: [id, userId], onDelete: Restrict)
 
+  @@unique([firstResultId, userId, cardId])
   @@unique([userId, cardId])
-  @@index([userId])
+  @@unique([cardId, discoveryRank])
 }
 ```
+
+### CHECK 制約
+
+Prisma のスキーマでは表現できないため、raw SQL のマイグレーションで追加する。
+
+```sql
+ALTER TABLE "Ticket" ADD CONSTRAINT ticket_daily_seq CHECK ("dailySeq" BETWEEN 1 AND 3);
+ALTER TABLE "Card"   ADD CONSTRAINT card_rarity      CHECK ("rarity" BETWEEN 1 AND 4);
+ALTER TABLE "Habit"  ADD CONSTRAINT habit_days_count CHECK (cardinality("daysOfWeek") BETWEEN 1 AND 7);
+```
+
+`daysOfWeek` の重複（`[MON, MON]`）はアプリ側で検証する。検証関数は1つだけ定義し、作成と更新の両方から呼ぶ。
 
 ### 設計の意図
 
@@ -344,29 +390,102 @@ model UserCard {
 
 | 項目 | 扱い | 理由 |
 |---|---|---|
-| 週の目標回数 | 保存しない | `daysOfWeek.length` から求まる |
+| 週の目標回数 | 保存しない | `daysOfWeek` の要素数から求まる |
 | チケット残高 | 保存しない | `consumedAt IS NULL` の件数 |
 | 全体ストリーク | 保存しない | `HabitLog` の日付から計算 |
 | 習慣ごとのストリーク | 保存しない | `HabitLog` を週単位で集計 |
 | 発見順位 | **保存する** | 挿入時点でしか確定できない |
+| `dailySeq` | **保存する** | 1日3枚の上限を一意制約で表現するため |
 
-**「1達成1チケット」は DB 制約で保証する。**
-`Ticket.habitLogId` を一意にすることで、同一の達成記録から2枚目が発行されることを構造的に不可能にする。
-1日3枚の上限は制約で表現できないため、トランザクション内で `earnedDate` の件数を数えて判定する。
+**「1達成1チケット」と「1日3枚」を DB 制約で保証する。**
+`Ticket.habitLogId` を一意にすることで、同一の達成記録から2枚目が発行されることを不可能にする。
+`@@unique([userId, earnedDate, dailySeq])` と `CHECK (dailySeq BETWEEN 1 AND 3)` の組み合わせが、1日3枚の上限そのものを表現する。アプリ側の件数チェックに依存しないため、並行リクエストでも破れない。
+
+集計テーブル（日次の発行枚数カウンタ）を持つ案も検討したが、チケットの実枚数と二重の真実になるため採用しなかった。
+
+**複合外部キーでユーザーの一貫性を DB に保証させる。**
+`HabitLog.userId` が親の `Habit.userId` と一致することを、複合外部キーで強制する。
+これがないと、サーバーアクションで所有者チェックを1箇所書き忘れた時点で、他人の習慣を自分の記録として保存できてしまう。しかも自分の一覧に表示されるため気づかない。
+
+同じ関係を `Ticket → HabitLog`、`GachaResult → Ticket`、`UserCard → GachaResult`、`UserCard → Habit` にも適用している。
+
+Prisma は 1:1 リレーションの定義側について、`fields:` に並べたフィールドの組み合わせそのものに一意制約を要求する。そのため `@@unique([habitLogId, userId, earnedDate])` などが必要になる。単体の `@unique` と重複するが回避できない。
+
+**`userId` の外部キーは `Habit` と `ShareLink` にのみ張る。**
+複合外部キーの連鎖が参照整合性を推移的に保証しているため、子テーブルに追加の外部キーは不要。
+
+```
+HabitLog.userId    → Habit(id, userId)            → user.id
+Ticket.userId      → HabitLog(id, userId, date)   → 上に帰着
+GachaResult.userId → Ticket(id, userId)           → 上に帰着
+UserCard.userId    → GachaResult(id,userId,cardId) → 上に帰着
+```
+
+**参照アクションはすべて明示する。**
+Prisma の既定値は optional が `SetNull`、必須が `Restrict`。
+`viaHabitId` を optional のままにすると、習慣を物理削除したときに「どの習慣で得たか」の記録が黙って NULL になる。
+そのため `viaHabitId` は必須とし、全リレーションに `onDelete` を明示する。
+
+**退会処理は DB のカスケードに任せない。**
+内部のリレーションが `Restrict` であるため、`user` からのカスケード削除は途中で失敗する。
+1トランザクションで、子から親の順に明示的に削除する。
+
+```
+UserCard → GachaResult → Ticket → HabitLog → Habit → ShareLink → user
+```
 
 **習慣は論理削除する。**
-物理削除すると `UserCard.viaHabitId` の参照先が失われ、「このカードはどの習慣で出たか」の記録が消えるため。
+物理削除すると `UserCard.viaHabitId` の参照先が失われるため。
 
 **後から復元できない情報のみ、第1弾から記録する。**
 発見順位、取得時のストリーク、きっかけとなった習慣、取得日時がこれに該当する。表示は第2弾でよい。
-ジャンル・裏面の知識・画像・保有率は、後から追加しても既存データから復元できるため、第1弾では扱わない。
+
+### チケット発行の手順
+
+その日の3枠のうち、未使用の最小値を選んで挿入する。
+
+```sql
+INSERT INTO "Ticket" ("id","userId","habitLogId","earnedDate","dailySeq")
+SELECT $1, $2, $3, $4, s
+FROM generate_series(1, 3) AS s
+WHERE NOT EXISTS (
+  SELECT 1 FROM "Ticket" t
+  WHERE t."userId" = $2 AND t."earnedDate" = $4 AND t."dailySeq" = s
+)
+ORDER BY s
+LIMIT 1;
+```
+
+- 影響行数 0 = その日は上限に達している（チケットを発行しない。正常系）
+- 影響行数 1 = 発行成功
+
+「その日の件数を数えて +1」という方式は採用しない。
+誤チェックの取り消しで `dailySeq` に穴が空くと（例: 1 と 3 が残る）、件数が 2 なので常に 3 を選び、既存の 3 と衝突し続けて無限リトライになるため。
+
+一意制約違反によるリトライは、**トランザクションの外側**に置く。
+PostgreSQL では一意制約違反の時点でトランザクション全体がアボート状態になり、内側での回復ができないため。
+またリトライ対象は `dailySeq` の衝突に限る。`@@unique([habitId, date])`（同じ習慣を同日に2回チェック）はリトライしても成功しないユーザーエラーであり、区別する必要がある。
+
+### 誤チェックの取り消し
+
+未消費のチケットが紐づく `HabitLog` のみ削除できる。1トランザクションで `Ticket` → `HabitLog` の順に削除する。
+
+消費済みチケットは `GachaResult → Ticket` の `Restrict` によって削除が阻止されるため、「未消費のみ取り消し可」という仕様は DB 側でも強制される。
+ただしアプリ側でも事前に判定し、外部キー違反ではなく意味のあるエラーを返す。
+
+### 発見順位の採番
+
+同一トランザクション内で `Card.discoveredCount` を原子的にインクリメントし、戻り値をそのまま `discoveryRank` に使う。
+Prisma の atomic number operation がそのまま `UPDATE ... SET x = x + 1 ... RETURNING` になる。
+
+`@@unique([cardId, discoveryRank])` が安全網として機能し、採番に不具合があれば静かに壊れる代わりにエラーになる。
 
 ### 第2弾でのスキーマ変更
 
-追加が必要なのは `Genre` テーブルと `Card.genreId` のみ。
+追加が必要なのは `Genre` テーブル、`Card.genreId`、ジャンル解放状況を持つ `UserGenre` テーブルのみ。
 既存データは1ジャンルに寄せるだけで、作り直しは発生しない。
 
----
+保有率の分母（全ユーザー数）は、Better Auth のモデルが同じスキーマにあるため通常のクエリで取得できる。
 
 ## 9. ゲームバランス
 
@@ -485,23 +604,75 @@ Duolingo の Weekend Amulet（休んでもストリークが途切れない仕�
 
 ---
 
-## 11. 未確定事項
+## 11. 実装の前提条件
+
+### Node.js を 20.19 以上に更新する
+
+**必須。** Prisma 7 は Node.js 20.19+ / 22.12+ / 24.0+ でないと、インストール時の preinstall スクリプトで停止する（警告ではなくエラー）。
+
+```
+Prisma only supports Node.js versions 20.19+, 22.12+, 24.0+.
+```
+
+Next.js 16 の要件は 20.9 以上なので、Next.js だけなら古い Node でも動いてしまう。Prisma を入れる段階で必ず詰まる。
+Vercel の既定ランタイムは Node 24 なので、ローカルもそれに合わせるのが望ましい。
+
+### Prisma 7 では接続 URL をスキーマに書けない
+
+Prisma 7 の破壊的変更。`datasource` ブロックに `url` を書くと以下のエラーになる。
+
+```
+The datasource property `url` is no longer supported in schema files.
+```
+
+接続 URL は `prisma.config.ts` に置き、`PrismaClient` には driver adapter（Neon なら `@prisma/adapter-neon`）を渡す。
+
+### 実装前に公式ドキュメントで確認すること
+
+推測で実装しない箇所。
+
+- Better Auth の Prisma アダプタの設定と、`npx @better-auth/cli generate` の実行手順
+- Prisma 7 の `prisma.config.ts` と driver adapter の書き方
+- Prisma 7 のトランザクション API
+- Neon のプール接続（PgBouncer）と Prisma のインタラクティブトランザクションの組み合わせ
+- `opengraph-image.tsx` の記法と制約
+
+---
+
+## 12. 未確定事項
 
 以下は未決定。決まり次第この文書に追記する。
 
 - 画面ごとのデータフロー、DAL の関数一覧
 - ガチャのトランザクション手順
 - ストリーク計算の具体的なアルゴリズム
+  - 全体ストリークは `SELECT DISTINCT date` の結果を TypeScript の純粋関数で処理する
+  - 関数のシグネチャは `calcStreak(dates, today)` とする。「2日連続で空いたらリセット」は最後の記録日と今日の距離にも適用されるため、日付の配列だけでは値が決まらない
 - エラー処理の方針
 - テストの方針と範囲
 - カードのテーマと40種の中身（「習慣の科学」は一例であり未決定）
 - ストリークの表示形式
 
-### 実装前に公式ドキュメントで確認すること
+---
 
-推測で実装しない箇所。
+## 13. 設計レビューの記録
 
-- Better Auth が生成するテーブルの構造と、`user` への項目追加方法
-- Prisma 7 におけるスカラー配列（`Int[]`）と `@db.Date` の記法
-- Prisma 7 のトランザクション API
-- `opengraph-image.tsx` の記法と制約
+データモデルは、実装前に独立したレビューを2回実施した。
+
+**1回目** — Critical 6件（公開URL用の識別子の欠落、1日3枚上限が並行実行で破れる、発見順位の採番競合、`userId` の一貫性が未検証、`firstResult` が別カードを指せる、`onDelete` 未指定）。すべて反映済み。
+
+このうち2件は一次情報で裏を取った。
+
+- Prisma の `onDelete` 既定値が optional で `SetNull` であること（公式ドキュメントで確認）
+- Better Auth の Prisma アダプタが `schema.prisma` にモデルを生成し、リレーションを追記できること（公式ドキュメントで確認）。これにより「認証テーブルには触れない」という当初の前提を撤回した
+
+**2回目** — Blocking 3件。すべて反映済み。
+
+- Prisma が 1:1 リレーションの複合外部キーに、フィールドの組み合わせそのものへの一意制約を要求する（`prisma validate` で実測）
+- 「件数 +1」による `dailySeq` の採番が、誤チェックの取り消しと組み合わさると無限リトライになる
+- `user` からのカスケード削除が内部の `Restrict` と衝突し、退会処理が失敗する
+
+**レビュー指摘のうち採用しなかったもの**
+
+- 全体ストリークを raw SQL の window 関数で計算する案。年間365行程度の規模では性能上の利点がなく、純粋関数のほうがテストしやすく読みやすいため
+- 日次の発行枚数を持つ集計テーブルを追加する案。チケットの実枚数と二重の真実になり、「集計で求まる値をカラムに持たない」方針と衝突するため
