@@ -202,7 +202,7 @@ src/
 ├── data/                              DAL。server-only / 認可 / DTO
 │   ├── session.ts
 │   ├── habits.ts
-│   ├── tickets.ts
+│   ├── checkins.ts
 │   ├── gacha.ts
 │   └── collection.ts
 │
