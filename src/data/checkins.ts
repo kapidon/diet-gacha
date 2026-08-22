@@ -103,12 +103,6 @@ export async function checkInForUser(userId: string, habitId: string): Promise<A
   }
 }
 
-/** セッションを解決して checkInForUser に渡すだけ。 */
-export async function checkIn(habitId: string): Promise<ActionResult> {
-  const user = await requireUser()
-  return checkInForUser(user.id, habitId)
-}
-
 /**
  * PostgreSQL では一意制約違反が起きた時点でトランザクション全体がアボート状態になり、
  * 内側では回復できない。だからリトライはトランザクションの外に置く。
