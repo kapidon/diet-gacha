@@ -17,6 +17,6 @@ export const getSession = cache(async () => {
 /** 未ログインならログイン画面へ送る。データを取る関数はすべてこれを通す。 */
 export async function requireUser(): Promise<{ id: string }> {
   const session = await getSession()
-  if (!session?.user) redirect('/login')
+  if (!session?.user?.id) redirect('/login')
   return { id: session.user.id }
 }

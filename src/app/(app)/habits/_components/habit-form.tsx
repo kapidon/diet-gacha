@@ -1,6 +1,6 @@
 'use client'
 
-import { useActionState, useEffect } from 'react'
+import { useActionState, useEffect, useId } from 'react'
 import type { Weekday } from '@/generated/prisma/client'
 import type { ActionResult } from '@/lib/validate'
 import { createHabitAction, updateHabitAction } from '../actions'
@@ -25,6 +25,9 @@ type HabitFormProps = {
 }
 
 export function HabitForm({ habit, onSuccess }: HabitFormProps) {
+  // 編集フォームと新規フォームが同時に DOM に載るとき、id="name" が重複して
+  // ラベルクリックのフォーカスが別フォームへ飛ぶのを防ぐ。
+  const id = useId()
   const action = habit ? updateHabitAction : createHabitAction
   const [state, formAction, isPending] = useActionState<ActionResult | null, FormData>(
     action,
@@ -46,11 +49,11 @@ export function HabitForm({ habit, onSuccess }: HabitFormProps) {
     <form action={formAction} className="space-y-3 rounded border p-4">
       {habit && <input type="hidden" name="id" defaultValue={habit.id} />}
       <div>
-        <label htmlFor="name" className="block text-sm font-medium">
+        <label htmlFor={`${id}-name`} className="block text-sm font-medium">
           習慣の名前
         </label>
         <input
-          id="name"
+          id={`${id}-name`}
           name="name"
           type="text"
           defaultValue={name}
