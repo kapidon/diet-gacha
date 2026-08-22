@@ -1,5 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient } from '@/generated/prisma/client'
+// `auth` CLI が jiti でこのファイルを読むとき tsconfig の `@/` エイリアスを解決できないため、
+// 相対 import にしている。
+import { PrismaClient } from '../generated/prisma/client'
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 

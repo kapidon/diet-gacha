@@ -17,7 +17,7 @@ enum Weekday {
   SUN
 }
 
-// user / session / account / verification は `npx @better-auth/cli generate` が
+// user / session / account / verification は `npx better-auth generate`（auth パッケージ）が
 // この schema.prisma に生成する。生成されたモデル自体は手で編集しない
 // （再生成で失われるため）。下記モデルからのリレーションのみ追記する。
 
@@ -142,7 +142,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
-  // @better-auth/cli generate の再生成で消える可能性がある。
+  // better-auth generate の再生成で消える可能性がある。
   // 消えたらこの2行を書き直す（Prisma はリレーションを両側に宣言する必要がある）。
   habits    Habit[]
   shareLink ShareLink?
@@ -183,8 +183,11 @@ model Account {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
+  issuer String
+
   @@index([userId])
   @@map("account")
+  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
 }
 
 model Verification {

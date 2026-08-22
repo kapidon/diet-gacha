@@ -25,11 +25,11 @@
     "server-only": "^0.0.1"
   },
   "devDependencies": {
-    "@better-auth/cli": "^1.4.22",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "auth": "^1.7.1",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
     "tailwindcss": "^4",
