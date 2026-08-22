@@ -117,9 +117,25 @@ Conventional Commits に従う。
 <type>(<scope>): <subject>
 ```
 
-- type: `feat` / `fix` / `docs` / `style` / `refactor` / `test` / `chore`
-- scope は任意。省略してよい
+- type: `feat` / `fix` / `docs` / `style` / `refactor` / `perf` / `test` / `build` / `ci` / `chore`
+- scope は任意。省略してよい。使うなら機能名（`habits` / `gacha` / `collection`）
 - subject は日本語。命令形ではなく、何をしたかを書く
+- 破壊的変更は type のあとに `!` を付ける
+
+形式は `.githooks/commit-msg` が確認する。クローンごとに一度だけ次を実行する。
+
+```
+git config core.hooksPath .githooks
+```
+
+### コミットの粒度
+
+- 1コミット = 1つの完結した変更。**そのコミットの時点で `npm run build` と `npm test` が通る**
+- 本文には「なぜ」を書く。「何を」は diff が語る
+- 本文が箇条書き5項目を超えたら、コミットを分けられないか検討する
+- `wip` / `typo` のような作業中のコミットを履歴に残さない
+- タスクとコミットは別の単位。1つのタスクに独立して意味が通る変更が2つあれば、コミットも2つに分ける
+- 赤いテストをコミットしない。テストと実装は同じコミットに入れる
 
 ## ドキュメントの書き方
 
