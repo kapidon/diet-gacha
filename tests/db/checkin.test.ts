@@ -88,6 +88,35 @@ describe('チケット発行', () => {
   })
 })
 
+describe('他人の習慣は操作できない', () => {
+  beforeEach(resetDb)
+
+  it('checkInForUser は他人の習慣にチェックできない', async () => {
+    const userA = await createUser('cross-a@example.com')
+    const userB = await createUser('cross-b@example.com')
+    const [habitId] = await createHabits(userB.id, 1)
+
+    const r = await checkInAs(userA.id, habitId)
+
+    expect(r).toEqual({ ok: false, message: '操作できませんでした' })
+    expect(await prisma.habitLog.count({ where: { userId: userB.id } })).toBe(0)
+    expect(await prisma.ticket.count({ where: { userId: userB.id } })).toBe(0)
+  })
+
+  it('undoCheckInForUser は他人の達成記録を取り消せない', async () => {
+    const userA = await createUser('cross-c@example.com')
+    const userB = await createUser('cross-d@example.com')
+    const [habitId] = await createHabits(userB.id, 1)
+    await checkInAs(userB.id, habitId)
+
+    const r = await undoCheckInAs(userA.id, habitId)
+
+    expect(r).toEqual({ ok: false, message: '取り消せる記録がありません' })
+    expect(await prisma.habitLog.count({ where: { userId: userB.id } })).toBe(1)
+    expect(await prisma.ticket.count({ where: { userId: userB.id } })).toBe(1)
+  })
+})
+
 describe('チェックの取り消し', () => {
   beforeEach(resetDb)
 

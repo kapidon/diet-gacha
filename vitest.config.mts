@@ -24,5 +24,8 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     env: { DATABASE_URL: process.env.DATABASE_URL ?? '' },
+    // tests/db/ が2ファイルになった。同じ DB を並列に TRUNCATE し合うと
+    // 互いのテストデータを消し合うため、ファイル単位の並列実行を止める。
+    fileParallelism: false,
   },
 })
