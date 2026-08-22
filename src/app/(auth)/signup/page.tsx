@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
 import { authClient } from '@/lib/auth-client'
+import { authErrorMessage } from '@/lib/auth-errors'
 
 export default function SignupPage() {
   const router = useRouter()
@@ -22,7 +23,7 @@ export default function SignupPage() {
     const { error } = await authClient.signUp.email({ name, email, password })
 
     if (error) {
-      setError(error.message ?? '登録できませんでした')
+      setError(authErrorMessage(error))
       setPending(false)
       return
     }

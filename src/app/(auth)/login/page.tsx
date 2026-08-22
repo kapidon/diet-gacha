@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import Link from 'next/link'
 import { authClient } from '@/lib/auth-client'
+import { authErrorMessage } from '@/lib/auth-errors'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -20,7 +21,7 @@ export default function LoginPage() {
     const { error } = await authClient.signIn.email({ email, password })
 
     if (error) {
-      setError(error.message ?? 'ログインできませんでした')
+      setError(authErrorMessage(error))
       setPending(false)
       return
     }
