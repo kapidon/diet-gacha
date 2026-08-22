@@ -2,7 +2,7 @@
 
 import { useActionState } from 'react'
 import type { ActionResult } from '@/lib/validate'
-import { checkInAction } from '../actions'
+import { checkInAction, undoCheckInAction } from '../actions'
 
 type TodayHabit = {
   id: string
@@ -51,10 +51,16 @@ export function TodayList({ habits }: { habits: TodayHabit[] }) {
 }
 
 function TodayRow({ habit }: { habit: TodayHabit }) {
-  const [state, formAction, isPending] = useActionState<ActionResult | null, FormData>(
-    checkInAction,
-    null,
-  )
+  const [checkState, checkFormAction, isCheckPending] = useActionState<
+    ActionResult | null,
+    FormData
+  >(checkInAction, null)
+  const [undoState, undoFormAction, isUndoPending] = useActionState<
+    ActionResult | null,
+    FormData
+  >(undoCheckInAction, null)
+
+  const state = habit.doneToday ? undoState : checkState
 
   return (
     <li className="rounded border p-3">
@@ -67,13 +73,23 @@ function TodayRow({ habit }: { habit: TodayHabit }) {
           </p>
         </div>
         {habit.doneToday ? (
-          <span className="text-sm text-gray-500">達成済み</span>
+          <form action={undoFormAction} className="flex items-center gap-2">
+            <input type="hidden" name="habitId" defaultValue={habit.id} />
+            <span className="text-sm text-gray-500">達成済み</span>
+            <button
+              type="submit"
+              disabled={isUndoPending}
+              className="rounded border px-3 py-1 text-sm disabled:opacity-50"
+            >
+              取り消す
+            </button>
+          </form>
         ) : (
-          <form action={formAction}>
+          <form action={checkFormAction}>
             <input type="hidden" name="habitId" defaultValue={habit.id} />
             <button
               type="submit"
-              disabled={isPending}
+              disabled={isCheckPending}
               className="rounded border px-3 py-1 disabled:opacity-50"
             >
               達成

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '@/lib/db'
-import { checkInForUser, checkInForUserWithRetry } from '@/data/checkins'
+import { checkInForUser, checkInForUserWithRetry, undoCheckInForUser } from '@/data/checkins'
 import { isAlreadyCheckedIn, isDailySeqConflict } from '@/lib/errors'
 import { jstDateString } from '@/lib/date'
 import { resetDb, createUser } from './helpers'
@@ -8,6 +8,7 @@ import { resetDb, createUser } from './helpers'
 // テストからは DAL の「セッションに依存しない側」を直接呼ぶ。
 const checkInAs = checkInForUser
 const checkInWithRetryAs = checkInForUserWithRetry
+const undoCheckInAs = undoCheckInForUser
 
 describe('チケット発行', () => {
   beforeEach(resetDb)
@@ -67,6 +68,39 @@ describe('チケット発行', () => {
       })
       expect(seqs.map((s) => s.dailySeq)).toEqual([1, 2])
     }
+  })
+
+  it('取り消して再チェックしても dailySeq が衝突しない', async () => {
+    const user = await createUser('b@example.com')
+    const ids = await createHabits(user.id, 4)
+
+    for (const id of ids.slice(0, 3)) await checkInAs(user.id, id)
+    await undoCheckInAs(user.id, ids[1])
+    const r = await checkInAs(user.id, ids[3])
+
+    expect(r.ok).toBe(true)
+    const seqs = await prisma.ticket.findMany({
+      where: { userId: user.id },
+      select: { dailySeq: true },
+      orderBy: { dailySeq: 'asc' },
+    })
+    expect(seqs.map((s) => s.dailySeq)).toEqual([1, 2, 3])
+  })
+})
+
+describe('チェックの取り消し', () => {
+  beforeEach(resetDb)
+
+  it('未消費チケットが紐づくチェックは取り消せる', async () => {
+    const user = await createUser('d@example.com')
+    const [id] = await createHabits(user.id, 1)
+    await checkInAs(user.id, id)
+
+    const r = await undoCheckInAs(user.id, id)
+
+    expect(r.ok).toBe(true)
+    expect(await prisma.habitLog.count({ where: { userId: user.id } })).toBe(0)
+    expect(await prisma.ticket.count({ where: { userId: user.id } })).toBe(0)
   })
 })
 

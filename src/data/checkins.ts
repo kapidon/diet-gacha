@@ -125,3 +125,32 @@ export async function checkInWithRetry(habitId: string): Promise<ActionResult> {
   const user = await requireUser()
   return checkInForUserWithRetry(user.id, habitId)
 }
+
+/**
+ * Ticket → HabitLog は Restrict なので、Ticket を先に消す。
+ * 消費済み（GachaResult が存在する）チケットは GachaResult → Ticket の Restrict により
+ * 削除がブロックされる。DB 側でも守られるが、アプリ側でも事前に判定して意味のあるエラーを返す。
+ */
+export async function undoCheckInForUser(userId: string, habitId: string): Promise<ActionResult> {
+  const today = jstDateString(new Date())
+
+  return prisma.$transaction(async (tx) => {
+    const log = await tx.habitLog.findFirst({
+      where: { userId, habitId, date: new Date(`${today}T00:00:00Z`) },
+      select: { id: true, ticket: { select: { id: true, consumedAt: true } } },
+    })
+    if (!log) return { ok: false, message: '取り消せる記録がありません' }
+    if (log.ticket?.consumedAt) {
+      return { ok: false, message: 'このチケットは使用済みのため取り消せません' }
+    }
+
+    if (log.ticket) await tx.ticket.delete({ where: { id: log.ticket.id } })
+    await tx.habitLog.delete({ where: { id: log.id } })
+    return { ok: true }
+  })
+}
+
+export async function undoCheckIn(habitId: string): Promise<ActionResult> {
+  const user = await requireUser()
+  return undoCheckInForUser(user.id, habitId)
+}

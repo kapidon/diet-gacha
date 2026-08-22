@@ -1,7 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { checkInWithRetry } from '@/data/checkins'
+import { checkInWithRetry, undoCheckIn } from '@/data/checkins'
 import type { ActionResult } from '@/lib/validate'
 
 /**
@@ -16,6 +16,18 @@ export async function checkInAction(
   if (habitId === '') return { ok: false, message: '操作できませんでした' }
 
   const result = await checkInWithRetry(habitId)
+  if (result.ok) revalidatePath('/')
+  return result
+}
+
+export async function undoCheckInAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const habitId = String(formData.get('habitId') ?? '')
+  if (habitId === '') return { ok: false, message: '操作できませんでした' }
+
+  const result = await undoCheckIn(habitId)
   if (result.ok) revalidatePath('/')
   return result
 }
