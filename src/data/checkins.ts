@@ -2,9 +2,64 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import { requireUser } from '@/data/session'
-import { jstDateString } from '@/lib/date'
+import {
+  calcStreak,
+  calcWeeklyStreak,
+  isoWeekStart,
+  jstDateString,
+  jstWeekday,
+} from '@/lib/date'
 import { NotAllowedError, isAlreadyCheckedIn, isDailySeqConflict } from '@/lib/errors'
 import type { ActionResult } from '@/lib/validate'
+
+/** 今日の画面が必要とするものを一度に返す。 */
+export async function getTodayView() {
+  const user = await requireUser()
+  const today = jstDateString(new Date())
+  const todayWeekday = jstWeekday(today)
+
+  // 3つのクエリは互いに独立しているので並行に投げる。順に await すると待ち時間が積み上がる。
+  const [habits, logs, ticketCount] = await Promise.all([
+    prisma.habit.findMany({
+      where: { userId: user.id, archivedAt: null },
+      select: { id: true, name: true, daysOfWeek: true },
+      orderBy: { createdAt: 'asc' },
+    }),
+    prisma.habitLog.findMany({
+      where: { userId: user.id },
+      select: { habitId: true, date: true },
+    }),
+    prisma.ticket.count({ where: { userId: user.id, consumedAt: null } }),
+  ])
+
+  // DB の date 型は UTC 0時の Date として返るので、'YYYY-MM-DD' に揃えてから純粋関数に渡す
+  const allDates = logs.map((l) => l.date.toISOString().slice(0, 10))
+  const doneToday = new Set(
+    logs.filter((l) => l.date.toISOString().slice(0, 10) === today).map((l) => l.habitId),
+  )
+
+  return {
+    today,
+    streak: calcStreak(allDates, today),
+    ticketCount,
+    habits: habits.map((h) => {
+      const dates = logs
+        .filter((l) => l.habitId === h.id)
+        .map((l) => l.date.toISOString().slice(0, 10))
+      const thisWeek = isoWeekStart(today)
+      return {
+        id: h.id,
+        name: h.name,
+        isToday: h.daysOfWeek.includes(todayWeekday),
+        doneToday: doneToday.has(h.id),
+        weekDone: dates.filter((d) => isoWeekStart(d) === thisWeek).length,
+        // 週の目標回数は daysOfWeek.length から求める。カラムには持たない。
+        weekTarget: h.daysOfWeek.length,
+        weeklyStreak: calcWeeklyStreak(dates, h.daysOfWeek.length, today),
+      }
+    }),
+  }
+}
 
 export async function checkInForUser(userId: string, habitId: string): Promise<ActionResult> {
   const today = jstDateString(new Date())
