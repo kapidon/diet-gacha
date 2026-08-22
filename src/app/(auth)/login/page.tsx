@@ -7,7 +7,6 @@ import { authClient } from '@/lib/auth-client'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { data: session, isPending: sessionPending } = authClient.useSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -28,43 +27,6 @@ export default function LoginPage() {
 
     router.push('/')
     router.refresh()
-  }
-
-  async function handleSignOut() {
-    setError(null)
-    setPending(true)
-
-    const { error } = await authClient.signOut()
-
-    if (error) {
-      setError(error.message ?? 'ログアウトできませんでした')
-      setPending(false)
-      return
-    }
-
-    setPending(false)
-    router.refresh()
-  }
-
-  if (sessionPending) return <p>読み込み中…</p>
-
-  // ログイン後の画面は Task 4 で作る。それまではこのページがログアウトの導線を兼ねる。
-  if (session) {
-    return (
-      <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-bold">ログイン中</h1>
-        <p>{session.user.email}</p>
-        {error && <p role="alert">{error}</p>}
-        <button
-          type="button"
-          onClick={handleSignOut}
-          disabled={pending}
-          className="rounded bg-black p-2 text-white disabled:opacity-50"
-        >
-          {pending ? 'ログアウト中…' : 'ログアウト'}
-        </button>
-      </div>
-    )
   }
 
   return (
