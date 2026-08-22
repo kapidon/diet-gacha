@@ -23,7 +23,7 @@ import type { ActionResult } from '@/lib/validate'
  * ここでは「今日は何枚まで発行されたか」を UI に出すためだけに使うので、
  * その用途に閉じた定数として置く。
  */
-const DAILY_TICKET_LIMIT = 3
+export const DAILY_TICKET_LIMIT = 3
 
 /** 今日の画面が必要とするものを一度に返す。 */
 export async function getTodayView() {

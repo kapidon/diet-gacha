@@ -15,6 +15,8 @@ cp .env.example .env
 # .env の BETTER_AUTH_SECRET を埋める
 openssl rand -base64 32
 
+npm install
+
 docker compose up -d
 npx prisma migrate deploy
 
@@ -35,6 +37,7 @@ npm run dev
 | テスト DB の破棄 | `docker compose down -v` |
 
 `tests/db/` のテストは実 DB を使う。実行前に `docker compose up -d` が要る。
+**`npm test` は `DATABASE_URL` が指す DB の内容を消す（TRUNCATE する）。** 開発用と検証用で DB を分けていないので、`.env` を書き換えて別の DB を向けている場合は注意すること。
 
 ## デプロイ手順
 

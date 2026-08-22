@@ -1,4 +1,4 @@
-import { getTodayView } from '@/data/checkins'
+import { DAILY_TICKET_LIMIT, getTodayView } from '@/data/checkins'
 import { TodayList } from './_components/today-list'
 
 export default async function TodayPage() {
@@ -11,7 +11,9 @@ export default async function TodayPage() {
         <p className="text-sm text-gray-500">{view.today}</p>
       </div>
       {view.todayLimitReached && (
-        <p className="text-sm text-gray-500">今日のチケットは上限（3枚）に達しています</p>
+        <p className="text-sm text-gray-500">
+          今日のチケットは上限（{DAILY_TICKET_LIMIT}枚）に達しています
+        </p>
       )}
       <div className="flex gap-6 rounded border p-3">
         <div>
