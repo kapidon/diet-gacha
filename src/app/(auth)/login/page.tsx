@@ -31,8 +31,17 @@ export default function LoginPage() {
   }
 
   async function handleSignOut() {
+    setError(null)
     setPending(true)
-    await authClient.signOut()
+
+    const { error } = await authClient.signOut()
+
+    if (error) {
+      setError(error.message ?? 'ログアウトできませんでした')
+      setPending(false)
+      return
+    }
+
     setPending(false)
     router.refresh()
   }
@@ -45,6 +54,7 @@ export default function LoginPage() {
       <div className="flex flex-col gap-4">
         <h1 className="text-xl font-bold">ログイン中</h1>
         <p>{session.user.email}</p>
+        {error && <p role="alert">{error}</p>}
         <button
           type="button"
           onClick={handleSignOut}
