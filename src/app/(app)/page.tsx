@@ -10,6 +10,9 @@ export default async function TodayPage() {
         <h1 className="text-xl font-bold">今日</h1>
         <p className="text-sm text-gray-500">{view.today}</p>
       </div>
+      {view.todayLimitReached && (
+        <p className="text-sm text-gray-500">今日のチケットは上限（3枚）に達しています</p>
+      )}
       <div className="flex gap-6 rounded border p-3">
         <div>
           <p className="text-sm text-gray-500">継続日数</p>

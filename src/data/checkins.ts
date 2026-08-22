@@ -12,14 +12,27 @@ import {
 import { NotAllowedError, isAlreadyCheckedIn, isDailySeqConflict } from '@/lib/errors'
 import type { ActionResult } from '@/lib/validate'
 
+/**
+ * 1日に発行されるチケットの上限。checkInForUser の generate_series(1, 3) と
+ * Ticket.dailySeq の CHECK 制約（BETWEEN 1 AND 3）にリテラルで入っている値と同じ。
+ *
+ * それらを定数化して3箇所を1つにまとめることも考えたが、マイグレーション済みの
+ * SQL 文字列（migration.sql の CHECK 制約）は後から書き換えると別のマイグレーション
+ * が必要になり、$executeRaw のテンプレートリテラルに JS の値を埋め込むのも
+ * generate_series の意図（1〜3の固定範囲）をかえって読みにくくする。
+ * ここでは「今日は何枚まで発行されたか」を UI に出すためだけに使うので、
+ * その用途に閉じた定数として置く。
+ */
+const DAILY_TICKET_LIMIT = 3
+
 /** 今日の画面が必要とするものを一度に返す。 */
 export async function getTodayView() {
   const user = await requireUser()
   const today = jstDateString(new Date())
   const todayWeekday = jstWeekday(today)
 
-  // 3つのクエリは互いに独立しているので並行に投げる。順に await すると待ち時間が積み上がる。
-  const [habits, logs, ticketCount] = await Promise.all([
+  // 4つのクエリは互いに独立しているので並行に投げる。順に await すると待ち時間が積み上がる。
+  const [habits, logs, ticketCount, todayEarned] = await Promise.all([
     prisma.habit.findMany({
       where: { userId: user.id, archivedAt: null },
       select: { id: true, name: true, daysOfWeek: true },
@@ -29,7 +42,13 @@ export async function getTodayView() {
       where: { userId: user.id },
       select: { habitId: true, date: true },
     }),
+    // 未使用チケットの残高。「今日獲得した枚数」ではないので、上限判定には使えない。
     prisma.ticket.count({ where: { userId: user.id, consumedAt: null } }),
+    // 今日獲得した枚数。checkInForUser / undoCheckInForUser と同じ形で today を渡す
+    // （ここがずれると1日ずれる）。
+    prisma.ticket.count({
+      where: { userId: user.id, earnedDate: new Date(`${today}T00:00:00Z`) },
+    }),
   ])
 
   // DB の date 型は UTC 0時の Date として返るので、'YYYY-MM-DD' に揃えてから純粋関数に渡す
@@ -42,6 +61,8 @@ export async function getTodayView() {
     today,
     streak: calcStreak(allDates, today),
     ticketCount,
+    todayEarned,
+    todayLimitReached: todayEarned >= DAILY_TICKET_LIMIT,
     habits: habits.map((h) => {
       const dates = logs
         .filter((l) => l.habitId === h.id)

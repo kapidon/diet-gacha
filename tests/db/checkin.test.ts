@@ -1,9 +1,18 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { prisma } from '@/lib/db'
-import { checkInForUser, checkInForUserWithRetry, undoCheckInForUser } from '@/data/checkins'
 import { isAlreadyCheckedIn, isDailySeqConflict } from '@/lib/errors'
 import { jstDateString } from '@/lib/date'
 import { resetDb, createUser } from './helpers'
+
+// getTodayView は内部で requireUser() を呼ぶ（habits.test.ts と同じ理由でモックする）。
+let currentUserId = ''
+
+vi.mock('@/data/session', () => ({
+  requireUser: async () => ({ id: currentUserId }),
+}))
+
+const { checkInForUser, checkInForUserWithRetry, undoCheckInForUser, getTodayView } =
+  await import('@/data/checkins')
 
 // テストからは DAL の「セッションに依存しない側」を直接呼ぶ。
 const checkInAs = checkInForUser
@@ -85,6 +94,46 @@ describe('チケット発行', () => {
       orderBy: { dailySeq: 'asc' },
     })
     expect(seqs.map((s) => s.dailySeq)).toEqual([1, 2, 3])
+  })
+})
+
+describe('今日のチケット上限', () => {
+  beforeEach(resetDb)
+
+  it('今日3枚獲得していれば todayLimitReached が true になる', async () => {
+    const user = await createUser('limit-a@example.com')
+    const ids = await createHabits(user.id, 3)
+    for (const id of ids) await checkInAs(user.id, id)
+
+    currentUserId = user.id
+    const view = await getTodayView()
+
+    expect(view.todayEarned).toBe(3)
+    expect(view.todayLimitReached).toBe(true)
+  })
+
+  it('未使用チケットの残高が3枚以上あっても、今日の獲得が3枚未満なら上限扱いにしない', async () => {
+    // 前日以前に貯めた未使用チケットが多くても、今日の判定には影響しないことを確かめる。
+    // Ticket.habitLogId は 1:1 なので、3枚分の HabitLog を別々に作る。
+    const user = await createUser('limit-b@example.com')
+    const habitIds = await createHabits(user.id, 3)
+    for (let i = 0; i < 3; i++) {
+      const log = await prisma.habitLog.create({
+        data: { userId: user.id, habitId: habitIds[i], date: new Date('2026-01-01T00:00:00Z') },
+        select: { id: true },
+      })
+      await prisma.$executeRaw`
+        INSERT INTO "Ticket" ("id","userId","habitLogId","earnedDate","dailySeq")
+        VALUES (gen_random_uuid()::text, ${user.id}, ${log.id}, '2026-01-01'::date, ${i + 1})
+      `
+    }
+
+    currentUserId = user.id
+    const view = await getTodayView()
+
+    expect(view.ticketCount).toBeGreaterThanOrEqual(3)
+    expect(view.todayEarned).toBe(0)
+    expect(view.todayLimitReached).toBe(false)
   })
 })
 
