@@ -30,7 +30,11 @@ export function HabitForm({ habit, onSuccess }: HabitFormProps) {
     action,
     null,
   )
-  const selectedDays = habit?.daysOfWeek ?? WEEKDAYS.map((d) => d.value)
+  // 検証エラー直後は、フォームがリセットされる前に入力していた値を復元する。
+  // 未送信・成功時は編集対象（habit）、それも無ければ新規登録の既定値にフォールバックする。
+  const failedValues = state && !state.ok ? state.values : undefined
+  const name = failedValues?.name ?? habit?.name
+  const selectedDays = failedValues?.daysOfWeek ?? habit?.daysOfWeek ?? WEEKDAYS.map((d) => d.value)
 
   useEffect(() => {
     if (state?.ok) onSuccess?.()
@@ -49,7 +53,7 @@ export function HabitForm({ habit, onSuccess }: HabitFormProps) {
           id="name"
           name="name"
           type="text"
-          defaultValue={habit?.name}
+          defaultValue={name}
           className="mt-1 w-full rounded border px-2 py-1"
         />
       </div>

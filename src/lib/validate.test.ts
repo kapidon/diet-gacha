@@ -22,6 +22,25 @@ describe('validateHabit', () => {
     const r = validateHabit({ name: '筋トレ', daysOfWeek: ['MON', 'WED', 'FRI'] })
     expect(r.ok).toBe(true)
   })
+
+  it('失敗時は入力した値を values に載せて返す（フォーム復元に使うため）', () => {
+    const input = { name: 'あ'.repeat(31), daysOfWeek: ['MON', 'WED'] as const }
+    const r = validateHabit({ name: input.name, daysOfWeek: [...input.daysOfWeek] })
+    expect(r).toEqual({
+      ok: false,
+      message: '習慣の名前は30文字以内にしてください',
+      values: { name: input.name, daysOfWeek: [...input.daysOfWeek] },
+    })
+  })
+
+  it('曜日の検証で失敗したときも values に元の入力を載せる', () => {
+    const r = validateHabit({ name: '筋トレ', daysOfWeek: [] })
+    expect(r).toEqual({
+      ok: false,
+      message: '実行する曜日を1つ以上選んでください',
+      values: { name: '筋トレ', daysOfWeek: [] },
+    })
+  })
 })
 
 describe('parseWeekdays', () => {
