@@ -1,0 +1,28 @@
+# テスト用の PostgreSQL。
+# 本番の Neon は Postgres 18 なのでバージョンを揃える。
+# ポートは 5433。ホストで動いている PostgreSQL 14 と衝突させないため。
+#
+# 起動:   docker compose up -d
+# 破棄:   docker compose down -v   （データごと消える）
+services:
+  db:
+    image: postgres:18
+    container_name: diet-gacha-test-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: diet_gacha_test
+    ports:
+      - "5433:5432"
+    # Postgres 18 から PGDATA が /var/lib/postgresql/<major>/docker に変わった。
+    # マウント先は /var/lib/postgresql（その1つ上）にする必要がある。
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d diet_gacha_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  db-data:

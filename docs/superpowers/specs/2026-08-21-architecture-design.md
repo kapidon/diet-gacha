@@ -717,26 +717,60 @@ Next.js 公式の例では Zod が使われている。一般的には Zod を�
 
 ## 11. テスト
 
-### 純粋関数のみテストする
+### 方針：カバレッジ目標は設定せず、リスクの高い箇所に本数を割く
 
-Next.js 公式ドキュメント（`node_modules/next/dist/docs/01-app/02-guides/testing/index.md`）:
+カバレッジを品質目標にしない。Inozemtseva & Holmes（ICSE 2014、5システム・最大72.4万行・31,000のテストスイートをミューテーションテストで評価）は次のように結論している。
+
+> coverage should not be used as a quality target because it is not a good indicator of test suite effectiveness
+
+同研究では、バグ検出力を予測するのはカバレッジではなく**テストの本数**であるとされている。
+したがって「何%」ではなく「どのリスクに何本割くか」で決める。
+
+また Next.js 公式ドキュメント（`node_modules/next/dist/docs/01-app/02-guides/testing/index.md`）は次のように述べている。
 
 > Since `async` Server Components are new to the React ecosystem, some tools do not fully support them.
 > In the meantime, we recommend using End-to-End Testing over Unit Testing for `async` components.
 
-| 対象 | テスト | 理由 |
-|---|---|---|
-| `lib/date.ts` | 書く | 境界条件が多い |
-| `lib/gacha-draw.ts` | 書く | 乱数を引数で渡せるので境界を直接確認できる |
-| `data/` の DAL | 書かない | DB が必要。準備コストが見合わない |
-| `page.tsx` / コンポーネント | 書かない | 公式が E2E を推奨。E2E 環境の構築は別規模 |
+`page.tsx` のユニットテストは書かない。
 
-設計段階で見つかった不具合は、いずれもこの2ファイルの領域に属する（日付の流儀、ストリークの境界、採番の競合）。
+### 3層に分けて配分する
 
-トランザクション内の分岐は、原子性のために意図的に SQL 側へ置いている。
-純粋関数に取り出すと判定がトランザクションの外に出るため、競合の問題が戻る。この部分は手動確認で担保する。
+| 層 | 対象 | 本数 | 理由 |
+|---|---|---|---|
+| 1 | `lib/date.ts` / `lib/gacha-draw.ts`（純粋関数） | 15〜20 | 境界条件が多い。DB が不要で速い |
+| 2 | 認証・ルーティング・バリデーションの E2E | 3〜5 | 状態に依存しない経路のみ |
+| 3 | `data/` のトランザクション（実 DB） | 4〜6 | **設計レビューで見つかった Critical はすべてこの層** |
+| — | コンポーネントテスト | 0 | UI を薄く保つ方針のため、得られる確信が小さい |
 
-### テストケース
+Google Testing Blog「Just Say No to More End-to-End Tests」は 70/20/10 を推奨し、E2E の問題として不安定さ、フィードバックの遅さ、原因特定の難しさ、CI 時間の膨張を挙げている。
+このうち**不安定さと実行時間は、テストを自動生成しても減らない**。したがって E2E は増やさない。
+
+一方、層3を避けていた理由は準備コストのみだった。コンテナで DB を用意すれば解消するため、第1弾に含める。
+
+### 層3で書くもの（実 DB が必要なもの）
+
+純粋関数でも E2E でも検出できない、並行実行と整合性の検証に限定する。
+
+```
+1. 同じ習慣を並行して2回チェック → チケットが1枚しか発行されない
+2. 1日に4件達成 → チケットは3枚で止まる
+3. チケット1枚で並行して2回ガチャ → 1回しか引けない
+4. チェック → 取り消し → 再チェック → dailySeq が衝突しない
+5. 同じカードを2人が同時に初取得 → discoveryRank が重複しない
+```
+
+**テスト用 DB は Docker で用意する。** リポジトリの `compose.yaml` を参照。
+
+- イメージは `postgres:18`。Neon の新規プロジェクトの既定が Postgres 18 のため、メジャーバージョンを揃える
+- ポートは 5433。ホストで動いている PostgreSQL 14 と衝突させないため
+- Postgres 18 から `PGDATA` が `/var/lib/postgresql/<major>/docker` に変わっている。マウント先はその1つ上の `/var/lib/postgresql` にする必要がある（17 までの `/var/lib/postgresql/data` にマウントすると起動に失敗する）
+
+```bash
+docker compose up -d     # 起動
+docker compose down -v   # データごと破棄
+```
+
+### 層1で書くテストケース
 
 ```
 calcStreak
@@ -770,18 +804,27 @@ pickRarity
 **検討して採用しなかった案**: Node 24 の組み込みテストランナー（`node --test` + `node:test`）。
 依存ゼロで、Node 24 は TypeScript をそのまま実行できる。
 採用しなかったのは、`@/` のパス別名（tsconfig の `paths`）の解決に追加設定が必要なため。
-依存を1つ減らすために設定と格闘するのは割に合わない。
 
 **注意**: `import 'server-only'` を含むファイルはテストから読み込めない（そのためのパッケージであるため）。
-`lib/` の純粋関数のみをテストする方針なら問題ないが、`data/` を import した時点で壊れる。
+層3では `data/` を直接呼ばず、Prisma クライアント経由で同じ SQL を実行する形にするか、
+テスト時に `server-only` を解決できるよう設定する必要がある。実装時に確認する。
+
+### E2E は playwright-cli の操作から生成する
+
+`playwright-cli` は、実行した操作に対応する Playwright の TypeScript を出力する。
+`references/test-generation.md` に plan → generate → heal のワークフローがある。
+
+対話的な動作確認と E2E テストの生成を、同じ操作から行う。
+
+ただし生成されるのは操作であって表明（assertion）ではないため、期待値は別途書く。
 
 ### 手動で確認する項目
 
+自動化しないものは、`playwright-cli` で操作して確認する。
+
 - ログアウト状態で `/habits` を直接開く → ログイン画面へ遷移するか
 - チケット0でガチャを引く → 意味のあるエラーが出るか
-- 同じ習慣を素早く2回チェックする → 2枚発行されないか
 - 4件目の達成 → チケットが増えないこと
-- チェック → 取り消し → 再チェック → `dailySeq` の衝突が起きないこと
 - 二重送信（ボタン連打、通信遅延、ブラウザの戻る）→ 二重発行されないこと
 - 日付境界（23:59 と 00:01 のチェック）→ 正しい日付で記録されること
 - 存在しない `shareId` → 404 になること
