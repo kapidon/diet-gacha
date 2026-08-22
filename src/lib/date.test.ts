@@ -67,4 +67,7 @@ describe('calcWeeklyStreak', () => {
     expect(calcWeeklyStreak(dates, 3, '2026-08-25')).toBe(1)
   })
   it('記録なしは 0', () => expect(calcWeeklyStreak([], 3, '2026-08-25')).toBe(0))
+  it('target が 0 なら 0（無限ループしない）', () => {
+    expect(calcWeeklyStreak(['2026-08-17', '2026-08-24'], 0, '2026-08-25')).toBe(0)
+  })
 })

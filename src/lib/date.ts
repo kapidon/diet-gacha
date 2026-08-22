@@ -62,6 +62,11 @@ export function calcStreak(dates: string[], today: string): number {
  * 今週は進行中なので、未達でも途切れさせない。
  */
 export function calcWeeklyStreak(dates: string[], target: number, today: string): number {
+  // target が 0 以下だとどの週も「達成」扱いになり while が無限ループする。
+  // 週次ストリークの定義上、目標回数0の習慣にストリークは存在しない
+  // （DB の CHECK 制約により通常は target <= 0 に到達しないが、純粋関数側でも防ぐ）。
+  if (target <= 0) return 0
+
   const counts = new Map<string, number>()
   for (const d of new Set(dates)) {
     const w = isoWeekStart(d)
