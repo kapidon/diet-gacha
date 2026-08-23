@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Weekday {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+// user / session / account / verification は `npx better-auth generate`（auth パッケージ）が
+// この schema.prisma に生成する。生成されたモデル自体は手で編集しない
+// （再生成で失われるため）。下記モデルからのリレーションのみ追記する。
+
+model ShareLink {
+  userId    String   @id
+  shareId   String   @unique // 推測不能なランダム文字列
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Habit {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  daysOfWeek Weekday[]
+  archivedAt DateTime? @db.Timestamptz(3) // 論理削除
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  logs       HabitLog[]
+  discovered UserCard[]
+
+  @@unique([id, userId])
+  @@index([userId])
+}
+
+model HabitLog {
+  id        String   @id @default(cuid())
+  userId    String
+  habitId   String
+  date      DateTime @db.Date // JST 基準
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  habit  Habit   @relation(fields: [habitId, userId], references: [id, userId], onDelete: Restrict)
+  ticket Ticket?
+
+  @@unique([habitId, date])
+  @@unique([id, userId, date])
+  @@index([userId, date])
+}
+
+model Ticket {
+  id         String    @id @default(cuid())
+  userId     String
+  habitLogId String    @unique
+  earnedDate DateTime  @db.Date
+  dailySeq   Int // 1〜3。その日の3枠のどれを占有しているか
+  earnedAt   DateTime  @default(now()) @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+
+  habitLog HabitLog     @relation(fields: [habitLogId, userId, earnedDate], references: [id, userId, date], onDelete: Restrict)
+  result   GachaResult?
+
+  @@unique([habitLogId, userId, earnedDate])
+  @@unique([userId, earnedDate, dailySeq])
+  @@unique([id, userId])
+  @@index([userId, consumedAt])
+}
+
+model Card {
+  id              Int     @id // 図鑑番号。シードで明示指定する
+  name            String
+  flavorText      String
+  rarity          Int
+  emoji           String
+  imagePath       String? // 第2弾
+  knowledge       String? // 第2弾（裏面）
+  sourceUrl       String? // 第2弾（出典）
+  discoveredCount Int     @default(0) // 発見順位の採番用
+
+  results GachaResult[]
+  owners  UserCard[]
+}
+
+model GachaResult {
+  id           String   @id @default(cuid())
+  userId       String
+  cardId       Int
+  ticketId     String   @unique
+  drawnAt      DateTime @default(now()) @db.Timestamptz(3)
+  streakAtDraw Int
+
+  card    Card      @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  ticket  Ticket    @relation(fields: [ticketId, userId], references: [id, userId], onDelete: Restrict)
+  firstOf UserCard?
+
+  @@unique([ticketId, userId])
+  @@unique([id, userId, cardId])
+  @@index([userId, drawnAt])
+}
+
+model UserCard {
+  id             String   @id @default(cuid())
+  userId         String
+  cardId         Int
+  firstResultId  String   @unique
+  viaHabitId     String
+  discoveryRank  Int
+  personalReward String?
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(3)
+
+  card        Card        @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  firstResult GachaResult @relation(fields: [firstResultId, userId, cardId], references: [id, userId, cardId], onDelete: Restrict)
+  viaHabit    Habit       @relation(fields: [viaHabitId, userId], references: [id, userId], onDelete: Restrict)
+
+  @@unique([firstResultId, userId, cardId])
+  @@unique([userId, cardId])
+  @@unique([cardId, discoveryRank])
+}
+
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean   @default(false)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  // better-auth generate の再生成で消える可能性がある。
+  // 消えたらこの2行を書き直す（Prisma はリレーションを両側に宣言する必要がある）。
+  habits    Habit[]
+  shareLink ShareLink?
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  issuer String
+
+  @@index([userId])
+  @@map("account")
+  @@unique([issuer, accountId], map: "account_issuer_accountId_uidx")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}

@@ -99,9 +99,14 @@ Node.js は `.node-version` の `24.19.0` を使う。fnm が `cd` で切り替�
   7.9.1 では生成されない。スキーマを変えたら `npx prisma generate` を続けて実行する
 - **`prisma-client` generator の出力は TypeScript。** 素の `node` からは import できない。
   Next.js か Vitest のトランスパイルを通す
-- **`prisma migrate dev` は必要時に TTY を要求し、非対話環境では失敗する。** プロンプトが要るときは人間に渡す
+- **`prisma migrate dev` は必要時に TTY を要求し、非対話環境では失敗する。**
+  プロンプトを出さない経路があるので、まずそれを通す。
+  `npx prisma migrate dev --create-only --name <名前>` で SQL を生成し、
+  **生成された `migration.sql` を全文読んで** `DROP` / `TRUNCATE` / 既存列の型変更が無いことを確認してから、
+  `npx prisma migrate deploy` で適用する（`deploy` はプロンプトを出さない）。続けて `npx prisma generate`。
+  破壊的な SQL が出たとき、`--create-only` 自体がプロンプトを要求したときは、人間に渡す
 - **`server-only` は Vitest では即 throw する。** `react-server` 条件でのみ空モジュールになる marker package なので、
-  DAL をテストから import するには `vitest.config.ts` で空モジュールへ alias する
+  DAL をテストから import するには `vitest.config.mts` で空モジュールへ alias する
 - **一意制約違反に `meta.target` は無い。** driver adapter 経由では
   `meta.driverAdapterError.cause.constraint.fields` に列名が入る。大文字を含む識別子だけ引用符付き。
   さらに `$executeRaw` 経由では `P2002` ではなく **`P2010`** で来るため、コードで絞ってはいけない。

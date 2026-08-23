@@ -20,7 +20,7 @@
 - **`prisma migrate dev` は Prisma Client を生成しない。** `--help` には "trigger generators" と書いてあるが、7.9.1 の実挙動は生成しない（実測）。スキーマを変えたら必ず `npx prisma generate` を続けて実行する
 - Prisma 7 の `prisma-client` generator が出力するのは **TypeScript**（`client.ts`）。素の `node` からは import できない。Next.js か Vitest のトランスパイルを通す
 - `prisma migrate dev` は必要に応じて対話プロンプトを出し、非対話環境では `Prisma Migrate has detected that the environment is non-interactive` で失敗する。プロンプトが必要になったら人間に渡す
-- 新しいライブラリの追加は、理由と代替案を示して承認を得てから行う。この計画で追加してよいのは次のみ: `prisma`, `@prisma/client`, `@prisma/adapter-pg`, `better-auth`, `@better-auth/cli`, `server-only`, `vitest`
+- 新しいライブラリの追加は、理由と代替案を示して承認を得てから行う。この計画で追加してよいのは次のみ: `prisma`, `@prisma/client`, `@prisma/adapter-pg`, `better-auth`, `auth`, `server-only`, `vitest`
 - 状態管理ライブラリを入れない。`useState` / `useContext` の範囲に留める
 - レイヤー分割や DI を導入しない。Repository インターフェースを作らない
 - `page.tsx` から Prisma を直接呼ばない。必ず `src/data/` を経由する
@@ -575,8 +575,13 @@ git commit -m "feat: JST と週境界と継続日数の計算を追加"
 
 ```bash
 npm install better-auth
-npm install -D @better-auth/cli
+npm install -D auth
 ```
+
+CLI のパッケージ名は `@better-auth/cli` から **`auth`** に変わっている（同一リポジトリの `packages/cli`）。
+旧名の最新は 1.4.22 で止まっており、それが生成する `Account` には `issuer` が無い。
+一方 1.7.1 のランタイムは sign-up 時に `issuer` を書くため、**旧名を使うと新規登録が必ず 500 になる**（実測）。
+CLI とランタイムのバージョンを揃えること。
 
 - [ ] **Step 3: `.env` に秘密鍵を追加する**
 
@@ -592,7 +597,7 @@ Step 1 で読んだ手順に従う。メール+パスワードのみを有効に
 - [ ] **Step 5: スキーマを生成する**
 
 ```bash
-npx @better-auth/cli generate
+npx better-auth generate
 ```
 
 Expected: `prisma/schema.prisma` に `User` / `Session` / `Account` / `Verification` が追記される
@@ -1830,7 +1835,8 @@ git commit -m "feat: 誤チェックの取り消しを追加"
 | アプリ側テーブルの `TRUNCATE ... CASCADE` は `user` に波及しない | Task 6 |
 | Better Auth 1.7.1 の `/sign-up/email` は `name` 必須。パスワードは既定 8〜128 文字 | Task 3 |
 | Better Auth の生成テーブル名は `@@map` で小文字（`user` 等）。`User.name` は必須 | Task 3, 6 |
-| `@better-auth/cli generate` は手で足したリレーションを保持した（保証はされていない） | Task 3 |
+| `better-auth generate`（CLI パッケージ `auth`）は手で足したリレーションを保持した（保証はされていない） | Task 3 |
+| CLI の旧名 `@better-auth/cli` は 1.4.22 で止まっており、生成物に `issuer` が無く新規登録が 500 になる | Task 3 |
 | 不正な enum 値は `PrismaClientValidationError`。`code` を持たない | Task 5 |
 | Next.js 16 の `error.tsx` の引数は `{ error, retry }` | Task 4 |
 

@@ -1,34 +1,153 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# diet-gacha
 
-## Getting Started
+自分で決めた小さな習慣を達成するとチケットが貯まり、ガチャを引いてカードを集めるアプリ。
 
-First, run the development server:
+続かない原因を「意志が足りない」ではなく「達成しても何も起きない」ことに置いている。
+習慣は自分で決められる（何が効くかは本人にしか分からない）が、報酬はアプリ側が管理する。
+チケットは1日3枚が上限で、カードは全ユーザー共通の固定40枚。
+
+TypeScript と Next.js を習得するための個人プロジェクト。
+
+## 現在の状態
+
+第1弾として、ログインから習慣の登録、達成のチェック、チケット発行、誤チェックの取り消しまでが動く。
+ガチャと図鑑は第2弾で実装する。
+
+| 実装済み | 未実装（第2弾） |
+|---|---|
+| ユーザー登録、ログイン | ガチャの抽選と図鑑 |
+| 習慣の登録、編集、アーカイブ（実行曜日つき） | 達成状況の推移表示 |
+| 日々の達成チェックとチケット発行 | 図鑑の公開ページと OG 画像 |
+| 誤チェックの取り消し | |
+| 継続日数と週次の達成回数の集計 | |
+
+## 技術構成
+
+Next.js 16（App Router）、React 19、TypeScript、Tailwind CSS v4、Prisma 7、PostgreSQL 18、Better Auth 1.7、Vitest。
+
+テストは45件。
+日付計算などの純粋関数はプロセス内で、チケットの採番と並行制御は実際の PostgreSQL に対して検証している。
+
+ORM は Drizzle も検討したが、開発を始めた時点で v1 が RC 段階だったため、期間中に破壊的変更が入る可能性を避けて Prisma を選んだ。
+認証は Auth.js の v5 が長くベータのままで、2025年9月以降は Better Auth チームがセキュリティ修正のみを引き継ぐ体制になったため、移行先である Better Auth を直接使っている。
+Clerk や Supabase Auth のような外部サービスは、セッションとユーザーを自前の DB に持てなくなるので採らなかった。
+
+## 動かす
+
+Node.js は `.node-version` の 24.19.0 を使う。
 
 ```bash
+git config core.hooksPath .githooks
+
+cp .env.example .env
+# BETTER_AUTH_SECRET を埋める
+openssl rand -base64 32
+
+npm install
+docker compose up -d
+npx prisma migrate deploy
+
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`DATABASE_URL` は `.env.example` の既定値のままでよい。
+`docker compose up -d` が起動する PostgreSQL を指している。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| 目的 | コマンド |
+|---|---|
+| 開発サーバー | `npm run dev` |
+| 静的検査 | `npm run lint` |
+| ビルド | `npm run build` |
+| テスト | `npm test` |
+| DB の破棄 | `docker compose down -v` |
 
-## Learn More
+`npm test` は `DATABASE_URL` が指す DB を TRUNCATE する。
+開発用と検証用を分けていないので、別の DB を向けている場合は注意すること。
 
-To learn more about Next.js, take a look at the following resources:
+## 設計の判断
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+判断の根拠と検討した代替案は [設計書](docs/superpowers/specs/2026-08-21-architecture-design.md) にある。
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 報酬をアプリ側が完全に管理する
 
-## Deploy on Vercel
+前身の実装では、ご褒美をユーザー自身が登録する形にしていた。
+これだと達成と無関係にいつでも入手でき、報酬として機能しない。
+カードは全ユーザー共通の固定セットにして、入手経路を達成の一本に絞った。
+自分で定義できる集合はコレクションにならない、という判断でもある。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 週に数回の習慣もストリークとして数える
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+毎日やる習慣だけを対象にすると、週3回の筋トレのような習慣が続かない扱いになる。
+習慣ごとに実行する曜日を持たせ、継続を「日単位」と「週単位」の二本立てで数えるようにした。
+週の目標回数は指定した曜日の数から求めるので、専用のカラムは持たない。
+
+### 集計で求まる値をカラムに持たない
+
+チケット残高、継続日数、週の目標回数は、いずれも保存せず問い合わせのたびに計算する。
+カラムに持つと、チェック、取り消し、習慣のアーカイブという複数の書き込み経路すべてで整合性を保つ必要が生じる。
+習慣の件数が数十のうちは計算コストが問題にならないため、同期漏れのリスクを避けるほうを選んだ。
+
+### スキーマは表示の都合ではなく記録の意味で決める
+
+実行曜日は 0 から 6 の数値ではなく `enum Weekday`（`MON` から `SUN`）で持つ。
+数値だと、どの曜日が 0 なのかがコードと DB のあいだで暗黙の了解になり、`Date` の実装ごとの違いを持ち込む。
+
+習慣は物理削除せず `archivedAt` を立てる。
+削除した習慣から得たカードの記録（どの習慣で発見したか）を、あとから失わせないため。
+
+第2弾で使う列（カード画像、裏面の知識、出典）は nullable で置き、暫定の値は入れない。
+埋まっていない列は「まだ無い」とわかるが、仮の値が入った列は本物と区別できなくなる。
+
+一方でカードの絵文字は、画像が用意できるまでの表示手段として持たせている。
+暫定の表示のためにカラムを増やすのは避けたいが、この列は他のデータを参照しておらず、不要になれば列を落とすだけで済む。
+後から変えるコストが高いものだけを先に決め、低いものは決め切らずに進めた。
+
+### レイヤー分割ではなく DAL への一本化
+
+クリーンアーキテクチャによるレイヤー分割も検討したが、採らなかった。
+保護したいロジックは抽選、継続日数、日付境界の3つで、いずれも DB に依存しない純粋関数として切り出せる。
+Repository インターフェースを挟むと、トランザクションのクライアントを全 Repository に引き回すことになり、DB から切り離すための仕組みが DB の都合で歪む。
+
+データ取得は `src/data/` に集約し、そこで認可を行う。
+認証チェックをレイアウトに置かないのは、App Router のレイアウトが画面遷移で再レンダリングされず、子ルートの実行も止められないため。
+データを取る関数がすべて `requireUser()` を通り、更新系はさらに `where` に `userId` を含める。
+
+### チケットの採番は未使用の最小値を選ぶ
+
+1日3枚の上限は `dailySeq` を1から3で採番して表現している。
+このとき「その日の発行済み件数 +1」で決めてはいけない。
+取り消しによって1と3が残った状態では件数が2になり、常に3を選んで既存の行と衝突し続ける。
+1から3のうち未使用の最小値を1つの SQL で選び、影響行数が0なら上限到達として正常に扱う。
+
+## 開発の進め方
+
+設計と実装の過程で、次の2つを規約として `AGENTS.md` に置いた。
+
+記憶や公式ドキュメントの記述より、実際に動かした結果を優先する。
+実行環境で確かめた挙動は「既知の落とし穴」として書き残し、記述と食い違ったら計測し直して規約のほうを直す。
+Prisma のマイグレーションが公式の説明と違う挙動をした件など、いくつかはこの形で記録してある。
+
+提案や実装を出すときは、判断が必要な箇所、確信が持てていない箇所、後から変えるコストが高い決定、検証状況を明記する。
+「問題ないですか」で終わらせず、どこをどう見ればよいかを示す。
+
+## デプロイ
+
+Vercel と Neon Postgres を想定している。
+
+1. Neon に DB を作る
+2. Vercel に `DATABASE_URL` と `BETTER_AUTH_SECRET` を設定する
+3. ローカルからマイグレーションを当てる
+
+   ```bash
+   DATABASE_URL=<Neon のダイレクト接続 URL> npx prisma migrate deploy
+   ```
+
+4. デプロイする
+
+Neon はプール接続（URL に `-pooler` が付く）とダイレクト接続で接続先が異なり、マイグレーションはダイレクト接続に当てる。
+
+マイグレーションを `build` に組み込んでいないのは、プレビューデプロイのたびに本番 DB へ適用されてしまうため。
+デプロイ頻度が低いので手動で運用する。
+
+`BETTER_AUTH_URL` は未設定でもリクエストの origin にフォールバックする。
+ただしプレビュー URL ごとに origin が変わるので、本番はカスタムドメインを明示的に設定し、プレビューでは設定しないほうが安定する。
