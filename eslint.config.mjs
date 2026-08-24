@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Prisma の生成物。手で書かないので検査しない。
+    "src/generated/**",
+    // Claude Code が作る worktree の複製。本体を二重に検査してしまう。
+    ".claude/**",
   ]),
 ]);
 
