@@ -127,6 +127,11 @@ Node.js は `.node-version` の `24.19.0` を使う。fnm が `cd` で切り替�
   CI の `npm audit` は `--audit-level=critical` で通している
 - **ESLint は `.claude/worktrees/` の複製まで検査する。** 本体を二重に検査して1万件以上の指摘が出る。
   `eslint.config.mjs` の `globalIgnores` で `.claude/**` と `src/generated/**` を外してある
+- **依存の取得は Takumi Guard のプロキシ（`npm.flatt.tech`）を通す。** `.npmrc` で指定してある。
+  `npm ci` は `package-lock.json` の `resolved` URL をそのまま使うので、
+  **`.npmrc` を変えるだけでは経路が変わらない**。lock 側の URL も揃っている必要がある。
+  切り替えたときは `sed` で `resolved` を一括置換した（711 件）。integrity は tarball の
+  内容ハッシュなので、プロキシが同じものを返す限り一致する（実際に `npm ci` で検証済み）
 
 ## 進め方
 

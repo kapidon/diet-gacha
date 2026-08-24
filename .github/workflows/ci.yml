@@ -46,6 +46,14 @@ jobs:
           node-version-file: .node-version
           cache: npm
 
+      # Takumi Guard の npm レジストリプロキシ経由で解決する（GMO Flatt Security）。
+      # npm audit と Dependabot が「既知の脆弱性」を見るのに対し、
+      # こちらは悪意あるパッケージそのもの（typosquatting、乗っ取り）を install 前に止める。
+      # bot-id を渡さない匿名モードなので、認証もシークレットも要らない。
+      # package-lock.json の resolved も npm.flatt.tech を指している必要がある
+      # （npm ci は lock の resolved をそのまま使うため）。リポジトリの .npmrc と対になっている。
+      - uses: flatt-security/setup-takumi-guard-npm@v1
+
       - run: npm ci
 
       # migrate dev は非対話環境で失敗する。deploy はプロンプトを出さない。
