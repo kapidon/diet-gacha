@@ -39,9 +39,9 @@ jobs:
       BETTER_AUTH_SECRET: ci-only-dummy-secret-not-used-anywhere-else
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
           cache: npm
@@ -52,7 +52,7 @@ jobs:
       # bot-id を渡さない匿名モードなので、認証もシークレットも要らない。
       # package-lock.json の resolved も npm.flatt.tech を指している必要がある
       # （npm ci は lock の resolved をそのまま使うため）。リポジトリの .npmrc と対になっている。
-      - uses: flatt-security/setup-takumi-guard-npm@v1
+      - uses: flatt-security/setup-takumi-guard-npm@6d4182745c1e474c35a023573c2612c085be45a4 # v1.2.0
 
       - run: npm ci
 
@@ -67,9 +67,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
 
