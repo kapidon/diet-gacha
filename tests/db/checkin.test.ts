@@ -41,7 +41,7 @@ describe('チケット発行', () => {
 
   it('同じ習慣を並行して2回チェックしてもチケットは1枚', async () => {
     const user = await createUser('c@example.com')
-    const [id] = await createHabits(user.id, 1)
+    const id = await createHabit(user.id)
 
     await Promise.allSettled([checkInAs(user.id, id), checkInAs(user.id, id)])
 
@@ -64,8 +64,8 @@ describe('チケット発行', () => {
       const [a, b] = await createHabits(user.id, 2)
 
       const rs = await Promise.all([
-        checkInWithRetryAs(user.id, a),
-        checkInWithRetryAs(user.id, b),
+        checkInWithRetryAs(user.id, a!),
+        checkInWithRetryAs(user.id, b!),
       ])
 
       expect(rs.every((r) => r.ok)).toBe(true)
@@ -84,8 +84,8 @@ describe('チケット発行', () => {
     const ids = await createHabits(user.id, 4)
 
     for (const id of ids.slice(0, 3)) await checkInAs(user.id, id)
-    await undoCheckInAs(user.id, ids[1])
-    const r = await checkInAs(user.id, ids[3])
+    await undoCheckInAs(user.id, ids[1]!)
+    const r = await checkInAs(user.id, ids[3]!)
 
     expect(r.ok).toBe(true)
     const seqs = await prisma.ticket.findMany({
@@ -119,7 +119,7 @@ describe('今日のチケット上限', () => {
     const habitIds = await createHabits(user.id, 3)
     for (let i = 0; i < 3; i++) {
       const log = await prisma.habitLog.create({
-        data: { userId: user.id, habitId: habitIds[i], date: new Date('2026-01-01T00:00:00Z') },
+        data: { userId: user.id, habitId: habitIds[i]!, date: new Date('2026-01-01T00:00:00Z') },
         select: { id: true },
       })
       await prisma.$executeRaw`
@@ -143,7 +143,7 @@ describe('他人の習慣は操作できない', () => {
   it('checkInForUser は他人の習慣にチェックできない', async () => {
     const userA = await createUser('cross-a@example.com')
     const userB = await createUser('cross-b@example.com')
-    const [habitId] = await createHabits(userB.id, 1)
+    const habitId = await createHabit(userB.id)
 
     const r = await checkInAs(userA.id, habitId)
 
@@ -155,7 +155,7 @@ describe('他人の習慣は操作できない', () => {
   it('undoCheckInForUser は他人の達成記録を取り消せない', async () => {
     const userA = await createUser('cross-c@example.com')
     const userB = await createUser('cross-d@example.com')
-    const [habitId] = await createHabits(userB.id, 1)
+    const habitId = await createHabit(userB.id)
     await checkInAs(userB.id, habitId)
 
     const r = await undoCheckInAs(userA.id, habitId)
@@ -171,7 +171,7 @@ describe('チェックの取り消し', () => {
 
   it('未消費チケットが紐づくチェックは取り消せる', async () => {
     const user = await createUser('d@example.com')
-    const [id] = await createHabits(user.id, 1)
+    const id = await createHabit(user.id)
     await checkInAs(user.id, id)
 
     const r = await undoCheckInAs(user.id, id)
@@ -189,7 +189,7 @@ describe('一意制約違反の形状', () => {
 
   it('Prisma API 経由の HabitLog 衝突を isAlreadyCheckedIn が拾う', async () => {
     const user = await createUser('f@example.com')
-    const [id] = await createHabits(user.id, 1)
+    const id = await createHabit(user.id)
     await checkInAs(user.id, id)
 
     const r = await checkInAs(user.id, id)
@@ -198,7 +198,7 @@ describe('一意制約違反の形状', () => {
 
   it('raw SQL 経由の Ticket 衝突を isDailySeqConflict が拾い、isAlreadyCheckedIn は拾わない', async () => {
     const user = await createUser('g@example.com')
-    const [id] = await createHabits(user.id, 1)
+    const id = await createHabit(user.id)
     await checkInAs(user.id, id)
 
     // 同じ (userId, earnedDate, dailySeq) をもう一度入れて衝突させる
@@ -208,6 +208,15 @@ describe('一意制約違反の形状', () => {
     expect(isAlreadyCheckedIn(err)).toBe(false)
   })
 })
+
+/**
+ * 1件だけ作るとき用。noUncheckedIndexedAccess 下では ids[0] が string | undefined になるが、
+ * n=1 で呼ぶ以上そこには必ず要素がある。`!` を各テストに撒かず、ここだけに閉じ込める。
+ */
+async function createHabit(userId: string): Promise<string> {
+  const [id] = await createHabits(userId, 1)
+  return id!
+}
 
 async function createHabits(userId: string, n: number): Promise<string[]> {
   const ids: string[] = []
@@ -237,7 +246,7 @@ async function captureError(fn: () => Promise<unknown>): Promise<unknown> {
  */
 async function insertDuplicateTicket(userId: string) {
   const today = jstDateString(new Date())
-  const [habitId] = await createHabits(userId, 1)
+  const habitId = await createHabit(userId)
   const log = await prisma.habitLog.create({
     data: { userId, habitId, date: new Date(`${today}T00:00:00Z`) },
     select: { id: true },

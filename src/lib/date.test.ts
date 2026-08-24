@@ -18,6 +18,14 @@ describe('jstWeekday', () => {
   it('2026-08-23 は日曜', () => expect(jstWeekday('2026-08-23')).toBe('SUN'))
 })
 
+describe('不正な日付文字列', () => {
+  // 以前は NaN のまま計算が進み、addDays の toISOString で
+  // 呼び出し元から離れた RangeError になっていた。入口で落とす。
+  it.each(['2026-08', '', 'yyyy-mm-dd', '2026/08/24'])('%o を渡すと throw する', (bad) => {
+    expect(() => diffDays(bad, '2026-08-24')).toThrow('YYYY-MM-DD')
+  })
+})
+
 describe('isoWeekStart', () => {
   it('日曜はその週の月曜へ戻る', () => expect(isoWeekStart('2026-08-23')).toBe('2026-08-17'))
   it('月曜はそのまま', () => expect(isoWeekStart('2026-08-24')).toBe('2026-08-24'))
