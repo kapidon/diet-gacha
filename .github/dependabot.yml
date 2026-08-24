@@ -1,0 +1,16 @@
+version: 2
+
+updates:
+  # npm の依存。CI の npm audit は high 以上しか落とさないので、
+  # 日常的な追従はこちらで受ける。
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # ワークフローが固定している actions/* のバージョンも古くなる。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

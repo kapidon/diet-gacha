@@ -92,7 +92,7 @@ Node.js は `.node-version` の `24.19.0` を使う。fnm が `cd` で切り替�
 
 ## 既知の落とし穴
 
-2026-08-22 に、実際のパッケージと PostgreSQL 18 コンテナで動かして確認した事実。
+2026-08-22 と 2026-08-24 に、実際のパッケージと PostgreSQL 18 コンテナで動かして確認した事実。
 記憶や公式ドキュメントの記述より、こちらを優先する。矛盾を見つけたら計測し直して、ここを直す。
 
 - **`prisma migrate dev` は Prisma Client を生成しない。** `--help` の "trigger generators" に反するが、
@@ -117,6 +117,16 @@ Node.js は `.node-version` の `24.19.0` を使う。fnm が `cd` で切り替�
 - **Better Auth の生成テーブル名は `@@map` で小文字**（`user` / `session` / `account` / `verification`）。
   `/sign-up/email` は `name` が必須で、パスワードの既定は 8〜128 文字
 - **Next.js 16 の `error.tsx` の引数は `{ error, retry }`。** 15 系までの `reset` から変わっている
+- **`prisma generate` は `DATABASE_URL` を要求する。** `prisma.config.ts` の `env('DATABASE_URL')` が
+  読み込み時に解決されるため。`postinstall` に置いてあるので、**`.env` が無いと `npm ci` 自体が失敗する**。
+  clone 直後は `.env.example` から `.env` を作る。CI では job の環境変数で渡す
+- **`@prisma/client` 自身が `prisma` に依存している。** `prisma` を devDependencies に移しても
+  `npm audit --omit=dev` の対象から外れない。`npm ls prisma --omit=dev` で経路が見える。
+  `@prisma/config` 経由の `deepmerge-ts` に high の advisory があり、
+  `npm audit fix` の提案は Prisma 6 へのダウングレードだけなので、7 を使う限り解消できない。
+  CI の `npm audit` は `--audit-level=critical` で通している
+- **ESLint は `.claude/worktrees/` の複製まで検査する。** 本体を二重に検査して1万件以上の指摘が出る。
+  `eslint.config.mjs` の `globalIgnores` で `.claude/**` と `src/generated/**` を外してある
 
 ## 進め方
 

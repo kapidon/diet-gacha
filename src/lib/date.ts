@@ -16,6 +16,12 @@ export function jstDateString(d: Date): string {
 /** 'YYYY-MM-DD' を UTC 0時のミリ秒に変換する。日付計算をタイムゾーンから切り離すため。 */
 function toUtcMidnight(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number)
+  // 添字アクセスは undefined を返しうる（noUncheckedIndexedAccess）。
+  // 不正な文字列を NaN のまま通すと、addDays の toISOString まで運ばれて
+  // 呼び出し元から離れた場所で RangeError になり、原因が追えない。ここで落とす。
+  if (y === undefined || m === undefined || d === undefined || Number.isNaN(y + m + d)) {
+    throw new Error(`日付は YYYY-MM-DD 形式で渡す: ${dateStr}`)
+  }
   return Date.UTC(y, m - 1, d)
 }
 
@@ -29,7 +35,10 @@ export function diffDays(a: string, b: string): number {
 }
 
 export function jstWeekday(dateStr: string): Weekday {
-  return WEEKDAYS[new Date(toUtcMidnight(dateStr)).getUTCDay()]
+  const w = WEEKDAYS[new Date(toUtcMidnight(dateStr)).getUTCDay()]
+  // getUTCDay が返すのは 0..6 だけだが、型からはそれを読み取れない。
+  if (w === undefined) throw new Error(`曜日を特定できない: ${dateStr}`)
+  return w
 }
 
 /** その日が属する週（月曜始まり）の月曜を返す。 */
@@ -45,14 +54,17 @@ export function isoWeekStart(dateStr: string): string {
  * today を受け取るのは、最後の記録日と今日の距離にも同じ規則が適用されるため。
  */
 export function calcStreak(dates: string[], today: string): number {
-  if (dates.length === 0) return 0
-  const sorted = [...new Set(dates)].sort().reverse()
-  if (diffDays(today, sorted[0]) > 2) return 0
+  // 分割代入にすると、空配列の判定と先頭要素の取り出しが一度で済む。
+  const [newest, ...older] = [...new Set(dates)].sort().reverse()
+  if (newest === undefined) return 0
+  if (diffDays(today, newest) > 2) return 0
 
   let count = 1
-  for (let i = 1; i < sorted.length; i++) {
-    if (diffDays(sorted[i - 1], sorted[i]) > 2) break
+  let prev = newest
+  for (const d of older) {
+    if (diffDays(prev, d) > 2) break
     count++
+    prev = d
   }
   return count
 }

@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # tests/db/ は実 DB を使う。compose.yaml と同じ postgres:18 に揃える。
+    # ポートは 5433 ではなく 5432。ホストの PostgreSQL と衝突しないランナー上では
+    # ずらす理由がなく、DATABASE_URL 側で吸収できる。
+    services:
+      db:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: diet_gacha_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d diet_gacha_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+
+    env:
+      # CI に .env は無い。prisma.config.ts と vitest.config.mts は
+      # .env が無ければ実環境変数を見るので、ここで渡せば足りる。
+      # postinstall の prisma generate もこの値を要求する（無いと npm ci が失敗する）。
+      # tests/db/helpers.ts の assertTestDatabase が localhost と diet_gacha_test を要求するため、
+      # ホスト名と DB 名は変えられない。
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/diet_gacha_test
+      # next build は NODE_ENV=production で走り、値が空だと better-auth が起動時に落ちる。
+      # CI 専用の使い捨ての値で、秘密ではない。
+      BETTER_AUTH_SECRET: ci-only-dummy-secret-not-used-anywhere-else
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      # migrate dev は非対話環境で失敗する。deploy はプロンプトを出さない。
+      - run: npx prisma migrate deploy
+
+      - run: npm run lint
+      - run: npm run build
+      - run: npm test
+
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      # high ではなく critical で落とす。prisma が @prisma/config 経由で依存する
+      # deepmerge-ts に high の advisory (GHSA-ggr8-5vv4-36mx) があり、
+      # npm audit fix の提案は prisma 6.12.0 へのダウングレードしかない。
+      # Prisma 7 を使う以上これは選べず、high のままだと CI が常に赤くなる。
+      # --omit=dev では消えない（@prisma/client 自身が prisma に依存している）。
+      # 到達経路は設定ファイルの読み込み時だけで、実行時のリスクは無い。
+      # high の追従は Dependabot が受け持ち、CI は critical だけを止める。
+      - run: npm audit --audit-level=critical
