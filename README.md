@@ -1,19 +1,19 @@
 # diet-gacha
 
+[![CI](https://github.com/kapidon/diet-gacha/actions/workflows/ci.yml/badge.svg)](https://github.com/kapidon/diet-gacha/actions/workflows/ci.yml)
+
 自分で決めた小さな習慣を達成するとチケットが貯まり、ガチャを引いてカードを集めるアプリ。
 
 続かない原因を「意志が足りない」ではなく「達成しても何も起きない」ことに置いている。
 習慣は自分で決められる（何が効くかは本人にしか分からない）が、報酬はアプリ側が管理する。
 チケットは1日3枚が上限で、カードは全ユーザー共通の固定40枚。
 
-TypeScript と Next.js を習得するための個人プロジェクト。
-
 ## 現在の状態
 
-第1弾として、ログインから習慣の登録、達成のチェック、チケット発行、誤チェックの取り消しまでが動く。
-ガチャと図鑑は第2弾で実装する。
+第1弾のうち、ログインから習慣の登録、達成のチェック、チケット発行、誤チェックの取り消しまでを実装している。
+ガチャと図鑑は第1弾の残りとして実装予定。
 
-| 実装済み | 未実装（第2弾） |
+| 実装済み | 未実装（第1弾の残り） |
 |---|---|
 | ユーザー登録、ログイン | ガチャの抽選と図鑑 |
 | 習慣の登録、編集、アーカイブ（実行曜日つき） | 達成状況の推移表示 |
@@ -25,12 +25,12 @@ TypeScript と Next.js を習得するための個人プロジェクト。
 
 Next.js 16（App Router）、React 19、TypeScript、Tailwind CSS v4、Prisma 7、PostgreSQL 18、Better Auth 1.7、Vitest。
 
-テストは45件。
+テストは74件。
 日付計算などの純粋関数はプロセス内で、チケットの採番と並行制御は実際の PostgreSQL に対して検証している。
 
 ORM は Drizzle も検討したが、開発を始めた時点で v1 が RC 段階だったため、期間中に破壊的変更が入る可能性を避けて Prisma を選んだ。
 認証は Auth.js の v5 が長くベータのままで、2025年9月以降は Better Auth チームがセキュリティ修正のみを引き継ぐ体制になったため、移行先である Better Auth を直接使っている。
-Clerk や Supabase Auth のような外部サービスは、セッションとユーザーを自前の DB に持てなくなるので採らなかった。
+認証専用の外部サービスを増やさず、アプリと同じ PostgreSQL でユーザーとセッションを管理する構成にしている。
 
 ## 動かす
 
@@ -43,7 +43,7 @@ cp .env.example .env
 # BETTER_AUTH_SECRET を埋める
 openssl rand -base64 32
 
-npm install
+npm ci
 docker compose up -d
 npx prisma migrate deploy
 
@@ -61,8 +61,22 @@ npm run dev
 | テスト | `npm test` |
 | DB の破棄 | `docker compose down -v` |
 
-`npm test` は `DATABASE_URL` が指す DB を TRUNCATE する。
-開発用と検証用を分けていないので、別の DB を向けている場合は注意すること。
+`npm test` はテスト DB のデータを TRUNCATE する。
+接続先は `localhost` または `127.0.0.1` の `diet_gacha_test` だけを許可し、
+接続先を上書きできるクエリパラメータや、解釈が曖昧になる空白・制御文字は拒否する。
+開発とテストは同じローカル DB を使うため、テスト実行時に開発データも消える。
+
+## 依存関係とセキュリティの保守
+
+依存の取得は Takumi Guard の npm プロキシを通し、CI で依存関係の脆弱性を `npm audit` で確認する。
+GitHub Actions は完全なコミット SHA に固定し、ワークフローの権限は `contents: read` に限定している。
+Dependabot は毎週更新を確認し、Prisma・Next.js/React・Better Auth の関連パッケージをそれぞれ同じ通常更新 PR にまとめる。
+
+更新時は同じメジャーバージョン内の安定版を優先する。
+`latest` タグだけで判断せず、リリース候補版やメジャー更新は互換性の確認を分ける。
+Node.js の型定義は実行環境と同じ24系を使い、実行時に存在しない API を型検査で見逃さないようにする。
+
+更新理由、監査結果、検証範囲は [2026-11-14 の保守記録](docs/maintenance/2026-11-14-security-update.md) にまとめている。
 
 ## 設計の判断
 
@@ -135,7 +149,7 @@ Prisma のマイグレーションが公式の説明と違う挙動をした件�
 Vercel と Neon Postgres を想定している。
 
 1. Neon に DB を作る
-2. Vercel に `DATABASE_URL` と `BETTER_AUTH_SECRET` を設定する
+2. Vercel に `DATABASE_URL`、`BETTER_AUTH_SECRET`、本番ドメインの `BETTER_AUTH_URL` を設定する
 3. ローカルからマイグレーションを当てる
 
    ```bash
