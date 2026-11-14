@@ -207,6 +207,22 @@ describe('一意制約違反の形状', () => {
     expect(isDailySeqConflict(err)).toBe(true)
     expect(isAlreadyCheckedIn(err)).toBe(false)
   })
+
+  it('別の一意制約違反をチェック済みやリトライ対象と誤認しない', async () => {
+    const user = await createUser('other-constraint@example.com')
+    const id = await createHabit(user.id)
+    await checkInAs(user.id, id)
+
+    // dailySeq は空いている 2 を使い、habitLogId に関する一意制約を重複させる。
+    const err = await captureError(() => prisma.$executeRaw`
+      INSERT INTO "Ticket" ("id", "userId", "habitLogId", "earnedDate", "dailySeq")
+      SELECT gen_random_uuid()::text, "userId", "habitLogId", "earnedDate", 2
+      FROM "Ticket" WHERE "userId" = ${user.id}
+    `)
+
+    expect(isAlreadyCheckedIn(err)).toBe(false)
+    expect(isDailySeqConflict(err)).toBe(false)
+  })
 })
 
 /**
