@@ -13,6 +13,18 @@ import { fileURLToPath } from 'node:url'
 const envPath = fileURLToPath(new URL('./.env', import.meta.url))
 if (existsSync(envPath)) process.loadEnvFile(envPath)
 
+// VITEST_MAX_WORKERS は resolveConfig の後段で maxWorkers を無条件に上書きする
+// （db プロジェクトの fileParallelism: false による maxWorkers=1 も含めて）。
+// 上書きされると tests/db/ のファイル間直列化が外れ、同じテスト用DBへの
+// TRUNCATE が競合してテストが不安定に落ちる。黙って壊れるより起動時に落ちてほしい。
+const maxWorkersEnv = process.env.VITEST_MAX_WORKERS
+if (maxWorkersEnv !== undefined && Number.parseInt(maxWorkersEnv, 10) !== 1) {
+  throw new Error(
+    `VITEST_MAX_WORKERS=${maxWorkersEnv} は db プロジェクトの fileParallelism: false を上書きし、` +
+      'tests/db/ のファイル間 TRUNCATE 競合を防げなくなる。1 にするか未設定にすること。',
+  )
+}
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -22,10 +34,31 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
     env: { DATABASE_URL: process.env.DATABASE_URL ?? '' },
-    // tests/db/ が2ファイルになった。同じ DB を並列に TRUNCATE し合うと
-    // 互いのテストデータを消し合うため、ファイル単位の並列実行を止める。
-    fileParallelism: false,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          // DB に触れるテストは置かない（tests/db/ を使う）。ここに置くと
+          // db プロジェクトの直列化の対象外になり、TRUNCATE が競合しうる。
+          include: ['src/**/*.test.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'db',
+          include: ['tests/**/*.test.ts'],
+          // tests/db/ が2ファイルになった。同じ DB を並列に TRUNCATE し合うと
+          // 互いのテストデータを消し合うため、このプロジェクトだけファイル単位の
+          // 並列実行を止める。DB を触らない unit プロジェクトは並列のまま。
+          //
+          // isolate: false は付けない。maxWorkers が unit（CPU数）と食い違い、
+          // 'have different maxWorkers but same groupOrder' で起動時エラーになる。
+          fileParallelism: false,
+        },
+      },
+    ],
   },
 })
