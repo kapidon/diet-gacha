@@ -1,13 +1,19 @@
 version: 2
 
 updates:
-  # npm の依存。CI の npm audit は high 以上しか落とさないので、
-  # 日常的な追従はこちらで受ける。
+  # npm の依存。関連パッケージをまとめ、片方だけの更新による不整合を避ける。
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      prisma:
+        patterns: [prisma, '@prisma/*']
+      next-react:
+        patterns: [next, eslint-config-next, react, react-dom, '@types/react', '@types/react-dom']
+      better-auth:
+        patterns: [better-auth, auth]
 
   # ワークフローが固定している actions/* のバージョンも古くなる。
   - package-ecosystem: github-actions

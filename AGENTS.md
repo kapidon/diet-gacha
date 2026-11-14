@@ -108,9 +108,12 @@ Node.js は `.node-version` の `24.19.0` を使う。fnm が `cd` で切り替�
 - **`server-only` は Vitest では即 throw する。** `react-server` 条件でのみ空モジュールになる marker package なので、
   DAL をテストから import するには `vitest.config.mts` で空モジュールへ alias する
 - **一意制約違反に `meta.target` は無い。** driver adapter 経由では
-  `meta.driverAdapterError.cause.constraint.fields` に列名が入る。大文字を含む識別子だけ引用符付き。
+  `meta.driverAdapterError.cause.constraint` を見る。
+  **adapter-pg 7.10.1 では `index` に制約名が入る**（2026-11-14 に実 DB で再検証）。
+  7.9.1 では `fields` に列名が入っていた。大文字を含む識別子だけ引用符付き。
   さらに `$executeRaw` 経由では `P2002` ではなく **`P2010`** で来るため、コードで絞ってはいけない。
-  判定は `cause.kind === 'UniqueConstraintViolation'` と列の組で行う
+  判定は `cause.kind === 'UniqueConstraintViolation'` と制約名で行い、
+  制約名が返らない場合だけ列の組を使う
 - **enum に不正な値を渡すと `PrismaClientValidationError`。** `code` を持たないので `P2002` 等の判定では拾えない。
   `FormData` の値は allowlist で実行時に絞り込む
 - **`TRUNCATE ... CASCADE` は参照している側にしか波及しない。** アプリ側のテーブルを消しても `user` は残る
@@ -122,9 +125,10 @@ Node.js は `.node-version` の `24.19.0` を使う。fnm が `cd` で切り替�
   clone 直後は `.env.example` から `.env` を作る。CI では job の環境変数で渡す
 - **`@prisma/client` 自身が `prisma` に依存している。** `prisma` を devDependencies に移しても
   `npm audit --omit=dev` の対象から外れない。`npm ls prisma --omit=dev` で経路が見える。
-  `@prisma/config` 経由の `deepmerge-ts` に high の advisory があり、
-  `npm audit fix` の提案は Prisma 6 へのダウングレードだけなので、7 を使う限り解消できない。
-  CI の `npm audit` は `--audit-level=critical` で通している
+  2026-08-24 時点では `@prisma/config` 経由の `deepmerge-ts` に high の advisory があり、
+  CI は `--audit-level=critical` にしていた。**2026-11-14 に Prisma 7.10.1 と依存の更新で
+  high / critical の解消を再検証したため、現在は `--audit-level=high` で止める。**
+  過去の監査結果だけを理由に、閾値を緩めたままにしない
 - **ESLint は `.claude/worktrees/` の複製まで検査する。** 本体を二重に検査して1万件以上の指摘が出る。
   `eslint.config.mjs` の `globalIgnores` で `.claude/**` と `src/generated/**` を外してある
 - **依存の取得は Takumi Guard のプロキシ（`npm.flatt.tech`）を通す。** `.npmrc` で指定してある。
