@@ -20,6 +20,9 @@
 | setup-takumi-guard-npm | 1.2.0 | 1.4.0 |
 
 実行環境は Node.js 24.19.0 を維持し、型定義を24系へ合わせた。
+型だけが先に上がらないよう、Dependabot では `@types/node` のメジャー更新提案を除外した。
+パッチ・マイナー更新は継続し、Node 本体の更新時にこの設定も見直す。
+設定の根拠: [Dependabot の ignore / update-types](https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference#ignore)。
 新しい直接依存は追加していない。lockfile の HTTP 取得先はすべて `npm.flatt.tech`。
 通常更新を Prisma、Next.js/React、Better Auth ごとにまとめる Dependabot 設定も追加した。
 

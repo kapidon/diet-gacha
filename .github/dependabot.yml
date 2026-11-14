@@ -7,6 +7,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # Node 本体は24系。型だけを新しいメジャーへ上げない。本体を上げるときに見直す。
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       prisma:
         patterns: [prisma, '@prisma/*']
